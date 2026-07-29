@@ -213,3 +213,13 @@ Meta 目标锚：图鉴完成度（情感）+ 餐厅等级（成就）+ 限定�
 文档完（v0.1.1，含主理人一致性裁定）。
 
 > 复核：文策渊 · 2026-07-28 · 签字结论：通过
+
+---
+
+## 10. 修订说明（待复核）
+
+> 标注：待复核（draft for lead review）｜ 提出人 design-strategist（文策渊）｜ 关联文档 `design/gdd/system-scene-map.md` v0.1
+
+**导航模型演进（待 lead 复核）**：原 MVP 隐含「单屏主菜单 + 核心循环」假设（§5.1 P0「核心 HUD/主菜单」），且既有 `design/ux/spec.md` §1.1 采用「主菜单浮层（☰）+ 底部 4 Tab（餐厅/抽卡/图鉴/商店）」。现经新指令，导航结构升级为「**最外层主菜单地图（中枢 overworld，星露谷 cozy 风）+ 4 场景区域（餐厅 / 仓库 / 员工休息区 / 动才市场）**」，详见新建 `design/gdd/system-scene-map.md` v0.1。该 spec **取代** UX spec §1.1 的 Tab Bar 方案，并重新映射图鉴=员工休息区（猫咖）、抽卡=动才市场。本变更**仅改 UX 导航结构，未触动任何锁参与 4 项设计决策**（已在 scene-map §4 一致性表核对）。另需注意：scene-map §0.1 披露了 tech-prototype / art-bible 的「Cocos + 位图 atlas」与本项目实际「微信原生 2d canvas + 零位图」的资产范式冲突，待 lead 裁决是否修订技术/美术文档。
+
+**待复核项**：①导航模型以 scene-map 为准、是否授权修订 UX spec §1.1；②资产范式冲突（OP1）如何处置；③IAP/商店入口缺失（OP2）方案。以上均不影响本 concept-doc 既有锁参与三支柱结论。
