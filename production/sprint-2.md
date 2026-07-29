@@ -5,7 +5,7 @@
 > 主导：engineering-lead（程基岩）· 主理人：游承峰
 > 范围：建立回归保护网 + 闭合已知工程缺口。
 > **不做** E3 抽卡 / E7 UI / R-BAL-4 数值；**不触碰** `game.js` / Cocos / 微信真机 shell。
-> 注：Sprint 3 已追加实现 **E3 抽卡**（纯逻辑核心，见 §6，任务标签 EL-E3-001）；E7 演出与 E5 升星/溢出回收仍延后至对应 epic。
+> 注：Sprint 3 已追加实现 **E3 抽卡**（纯逻辑核心，见 §6，任务标签 EL-E3-001）；**Sprint 4 已追加实现 E7 UX 壳 / canvas 渲染 MVP（见 §7，任务标签 EL-E7-001）**——真机「告别黑屏、可见可玩」。E7 演出/概率公示/复杂动画/音效仍归 E9/E10；E5 升星/溢出回收仍延后至对应 epic。
 
 ## 1. 交付清单
 
@@ -54,7 +54,7 @@
 | D-NOTE-4 | 设计评审 | 食材来源粒度 | 待定 |
 | D-NOTE-5 | 设计评审 | 羁绊家族级来源 | 待定 |
 | E3 抽卡 | Epic | **Sprint 3 已实现（EL-E3-001，见 §6）** | 已完成 |
-| E7 UI | Epic | 用户未选，留后续 | Sprint 3+ |
+| E7 UX 壳（canvas MVP） | Epic | **Sprint 4 已实现（EL-E7-001，见 §7）** | 已完成 |
 | R-BAL-4 数值复核 | 锁参 | 主理人推演落盘，待 design-strategist 签字 | 待定 |
 
 ## 5. 验证（HANDOFF §8 防抖）
@@ -93,7 +93,7 @@
 | 项 | 来源 | 延后原因 | 落点 Sprint |
 |----|------|----------|-------------|
 | E5 升星阈值 + 满星溢出回收 | Epic | 用户选定 E3 范围不含升星（system-gacha §3.4/§3.5 后半） | E5 |
-| E7 UI 演出 | Epic | 抽卡演出/概率公示 UI 归后续 | E7 |
+| E7 UI 演出/特效 | Epic | 抽卡演出/概率公示/复杂动画/音效归 E9/E10（壳层已落 §7） | E9/E10 |
 | C6 | QA 报告 | 部分 GDD 验收超出本范围，随对应 epic 落地 | 对应 epic Sprint |
 | D-NOTE-1~5 | 设计评审 | 离散座位/员工上限/调度/食材粒度/羁绊家族级 | 待定 |
 | R-BAL-4 数值复核 | 锁参 | 主理人推演落盘，待 design-strategist 签字 | 待定 |
@@ -103,3 +103,38 @@
 - `node tests/smoke/build-size.gate.js`：发布包 < 4MB，exit 0（新增 `src/gacha/index.js` 计入主包，仍远低于硬限）。
 - `git log --oneline -1`：Sprint 3 E3 提交。
 - 全部新增/修改文件 `stat -f '%m %z'` 见回传报告（主理人独立复核）。
+
+---
+
+## 7. Epic 7 UX 壳 / canvas 渲染（Sprint 4 · EL-E7-001）
+
+> 任务标签：EL-E7-001 ｜ 主导：engineering-lead（程基岩）｜ 主理人：游承峰
+> 范围：让真机「告别黑屏、可见可玩」——微信原生 `wx.createCanvas()+getContext('2d')` 渲染餐厅/员工/顾客/抽卡，点击抽卡按钮触发 E3。
+> 纪律：纯逻辑层（E4/E11/E12/E3）不重写、只引用；不引入 Cocos/引擎；主包 <4MB（新增渲染代码 ~12KB，门禁 64.73KB PASS）；锁参红线/不变量 1–5 不动；GDD 不回改。
+
+### 7.1 交付清单
+- **A. `src/ui/render.js`（新增，纯逻辑）**：`buildScene(state)` 纯函数把逻辑层只读状态映射为绘制指令数组（`clear/rect/circle/text`，带 `tag` 便于单测）；`applyCommands(ctx,cmds)` 落到 2d 上下文（ctx 空安全）；`getGachaButtons/hitGachaButton` 按钮几何单一来源；`RARITY_COLORS/ROLE_COLORS`。零 wx/canvas 依赖，Node 直跑可测。
+- **B. `game.js` 改造（最小、保持 node 兼容）**：抽出 `buildWorld(Mods)`（ledger 与 gacha 共享，形成「服务赚星券→抽卡花星券」闭环）；`bootDemo` 行为不变（node 仍打印 `I_eff = 0.540000` + `booted OK`）；真机分支 `runUi` 渲染循环（每帧 serve 推进 + buildScene + applyCommands）+ `wx.onTouchStart` 命中抽卡按钮触发 `GachaEngine.drawSingle/drawTen`；`wx` 守卫 + canvas guard 保 node 可跑。
+- **C. 只读 getter（最小、不改计算）**：`Restaurant.getStaff()/getUnlockedDishes()/getIeff()`；`GachaEngine.getLastResult()`（记录最近成功抽卡结果供演出）。
+- **D. 测试 `tests/unit/ui-state.spec.js` + `tests/helpers/mock-canvas.js`**：buildScene 纯函数断言（三岗员工色块+等级、顾客需求气泡未解锁置灰🔒、结算浮动数字、抽卡稀有度色块+动物名、HUD）；applyCommands 在 mock ctx 不抛；按钮命中检测。不依赖真 canvas，Node 直跑。
+- **E. 文档**：本 §7 + §4/§6.3 行 E7 由 deferred 改为「Sprint 4 已实现」；tests/README §5 映射补 `ui-state.spec.js`。
+
+### 7.2 UI 范围（MVP 可视）
+- **做**：餐厅区 + 4 座位占位；三岗员工色块（Chef/Waiter/Host + 等级）；顾客「想要 dish_x」需求气泡（未解锁置灰🔒）；服务结算浮动 `+x.xx★`；抽卡结果演出（稀有度色块 + 动物名，SSR=金）；HUD（★/🍳/Pity）；两个抽卡按钮 + 触摸触发 E3。
+- **不做（归 E9/E10 或后续）**：复杂动画/粒子、音效、概率公示弹层、图鉴/商店完整页、程序化拼装角色贴图（仍走 E2 拼装入口，不在本 MVP 演出）。
+
+### 7.3 真机验证步骤（主理人/用户）
+1. 微信开发者工具「重新预览 / 真机扫码」，应看到**餐厅画面**（底色 + 座位 + 三岗员工 + 顾客气泡），**不再是黑屏/卡 loading**。
+2. 点击底部「单抽 100★」/「十连 900★」按钮，应触发抽卡并演出稀有度色块 + 动物名；星券不足时 HUD 提示「星券不足」。
+3. 餐厅循环每帧推进：顾客上门→服务→`+x.xx★` 浮动→轮换新顾客；星券随服务累积，可支撑抽卡。
+
+### 7.4 纪律遵守
+- 锁参红线、不变量 1–5 未动；tunable 仍标「待复核非锁参」。
+- 未触碰 Cocos / 未引入引擎；仅微信原生 canvas 2d；主包 ~64.7KB（门禁 <4MB PASS）。
+- 未重写 src/ 逻辑（E4/E11/E12/E3 仅引用）；仅新增最小只读 getter。
+- `npm test` 全绿（8 套件 / 85 用例）；`node game.js` 仍 `I_eff = 0.540000` + `booted OK`；`build-size.gate.js` PASS。
+
+### 7.5 待主理人拍板 / 已知简化
+- 触摸坐标映射按画布像素直接比对（未做 dpr 缩放换算）；不同机型 dpr 下按钮命中精度可能偏差，后续可加 `canvas.width/SCENE_W` 缩放。
+- 顾客/员工为占位色块+字符（非程序化拼装贴图）；角色可视化演出归 E2/E9。
+- 「可服务门槛」仍为「任一岗在岗」（D-CLR-1 设计澄清项未变，本 MVP 不改逻辑）。

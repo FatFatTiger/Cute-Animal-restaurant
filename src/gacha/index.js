@@ -73,12 +73,15 @@ class GachaEngine {
     this._newbieEnabled = opts.newbieWindow !== false && LOCKED.NEWBIE_FIRST10_SR === true;
 
     this._cache = new Map(); // requestId -> 结果（幂等：同 id 只结算一次）
+    this._lastResult = null; // 最近一次成功抽卡结果（只读 getter，供 E7 UI 演出引用）
   }
 
   // —— 公开读取接口（状态只读，便于测试与存档恢复）——
   getPity() { return this._pity; }
   getPulls() { return this._pulls; }
   getOwned() { return Array.from(this._owned); }
+  /** 只读 getter：最近一次成功抽卡结果（供 E7 UI 渲染抽中稀有度色块 + 动物名）。 */
+  getLastResult() { return this._lastResult; }
 
   /**
    * 默认摇号裁决（服务端权威抽象的可注入默认实现）。
@@ -230,6 +233,7 @@ class GachaEngine {
       pityAfter: this._pity,
       pullsAfter: this._pulls,
     };
+    this._lastResult = out; // 记录最近一次成功结果（只读 getter 供 UI 引用）
     this._cache.set(requestId, out);
 
     // E3-S6 预留：每抽结果订阅接口（演出归 E7，本 Sprint 不实现）

@@ -3,7 +3,7 @@
 > 项目：可爱小动物「卡牌收集 + 餐厅放置经营」治愈系微信小游戏
 > 阶段：Phase 5 Sprint 2 工程底座 · 脚手架已落地为真实回归套件 · Sprint 3 追加 E3 抽卡纯逻辑
 > 版本：v0.3 · 作者：engineering-lead（程基岩）· 对齐：tech-prototype.md（L1–L5、V1–V7、R1–R7、ADR-1~4）+ 三份 GDD
-> 状态：已落地（Sprint 1 垂直切片 + Sprint 2 工程底座 + Sprint 3 E3 抽卡），随 CI 自动回归
+> 状态：已落地（Sprint 1 垂直切片 + Sprint 2 工程底座 + Sprint 3 E3 抽卡 + Sprint 4 E7 UX 壳渲染），随 CI 自动回归
 
 > 本文件既是**结构与约定**，也是**已落地套件的真实清单**。所有 `*.spec.js` / `*.int.js` / `*.gate.js` 均已实现并通过 `npm test` / `node tests/smoke/build-size.gate.js`。
 
@@ -33,7 +33,8 @@ tests/
 ├── unit/                # T1 单元测试：拼装 / 经济公式
 │   ├── assembly.spec.js       # ★Sprint2新增：atlas 零增长(1)、家族守卫(2)、pack/unpack、tint 契约
 │   ├── economy.spec.js        # I_eff / 离线封顶(5) / 升级成本 / 货币守恒钩子(3) / 解锁原子扣费(6)
-│   └── gacha.spec.js          # ★E3新增：不变量4 概率蒙特卡洛 / 硬·软保底 / 十连·新手保底 / 幂等
+│   ├── gacha.spec.js          # ★E3新增：不变量4 概率蒙特卡洛 / 硬·软保底 / 十连·新手保底 / 幂等
+│   └── ui-state.spec.js        # ★E7新增：buildScene 纯函数（三岗/需求气泡/结算/抽卡稀有度色块）+ 按钮命中（mock canvas）
 ├── integration/         # T2 集成测试：跨系统货币流与服务层
 │   ├── customer-dish.int.js        # 顾客需求-解锁匹配(7)
 │   ├── dish-unlock.int.js          # 菜品解锁原子扣费(6) 跨系统：解锁→账本→顾客可服务性
@@ -48,10 +49,11 @@ tests/
     ├── mock-wx-storage.js      # wx.getStorage/setStorage 内存实现
     ├── seeded-rng.js           # 可种子 RNG，保证概率测试可复现
     ├── economy-harness.js      # 内存账本，供集成测试注入（assertConservation）
-    └── clock.js                # 可注入时钟，模拟服务端时间戳（离线/免费抽防回拨）
+    ├── clock.js                # 可注入时钟，模拟服务端时间戳（离线/免费抽防回拨）
+    └── mock-canvas.js          # ★E7新增：内存 mock canvas 2d context，记录绘制调用（applyCommands Node 验证）
 ```
 
-> 占位但未落地（留待对应 epic）：`cultivation.spec.js`、`idle-economy-gacha.int.js`、`bond-idle.int.js`、`device-boot.smoke.js`、`playtest/` 下文件、`fixtures/gacha-config.json`。抽卡套件（`gacha.spec.js` / `gacha-economy.int.js`）已于 **E3 抽卡（EL-E3-001）** 落地；cultivation / bond-idle 随 E5 落地；device-boot / playtest 随真实微信构建环境接入启用。
+> 占位但未落地（留待对应 epic）：`cultivation.spec.js`、`idle-economy-gacha.int.js`、`bond-idle.int.js`、`device-boot.smoke.js`、`playtest/` 下文件、`fixtures/gacha-config.json`。抽卡套件（`gacha.spec.js` / `gacha-economy.int.js`）已于 **E3 抽卡（EL-E3-001）** 落地；**E7 渲染层纯函数测试（`ui-state.spec.js` + `helpers/mock-canvas.js`）已于 E7 UX 壳（EL-E7-001）落地**——`buildScene` 不依赖真 canvas，Node 直跑；canvas 真机演出属 T4 体验验证，不进 CI 阻断；cultivation / bond-idle 随 E5 落地；device-boot / playtest 随真实微信构建环境接入启用。
 
 ### 命名规范
 - 单元测试：`{module}.spec.js`，纯逻辑断言（jest）。
@@ -186,8 +188,9 @@ jobs:
 | `qa-gaps.int.js` ★ | Sprint1 QA（C1 serve 幂等 / C2 clock+harness 死 helper 回收） | Sprint 2 新增 |
 | `build-size.gate.js` | ADR-3、tech-prototype §4（首包预算）、§7（V4） | Sprint 2 新增 |
 | `gacha.spec.js` / `gacha-economy.int.js` | system-gacha §2/§3.1–§3.5、E6 账本闭环 | **Sprint 3 新增（EL-E3-001，不变量 4 落地）** |
+| `ui-state.spec.js` | E7 渲染层 buildScene 纯函数（三岗/需求气泡/结算/抽卡稀有度色块）+ 按钮命中 | **Sprint 4 新增（EL-E7-001）** |
 | `cultivation.spec.js` / `bond-idle.int.js` | system-cultivation §2/§3.1/§3.2 | **未落地（E5 延后）** |
 
 ---
 
-> 文件状态：v0.3 已落地（Sprint 1 + Sprint 2 + Sprint 3 E3）。下一步：E5 落地时补齐 cultivation/bond-idle 套件；device-boot/playtest 随真实微信构建环境接入启用；D-NOTE-1~5 设计评审结论落地到对应 epic 后再补集成用例（见 `production/sprint-2.md` §6.3 待办）。
+> 文件状态：v0.3 已落地（Sprint 1 + Sprint 2 + Sprint 3 E3 + Sprint 4 E7 UX 壳）。下一步：E5 落地时补齐 cultivation/bond-idle 套件；device-boot/playtest 随真实微信构建环境接入启用；D-NOTE-1~5 设计评审结论落地到对应 epic 后再补集成用例（见 `production/sprint-2.md` §7.5）。

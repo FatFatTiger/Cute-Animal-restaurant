@@ -40,6 +40,31 @@ class Restaurant {
     this.config.adMult = v;
   }
 
+  /**
+   * 只读 getter（供 E7 UI 引用，不改任何计算逻辑）：
+   * 返回当前**已排班在岗**员工列表（含 role / affinityRole / level）。
+   */
+  getStaff() {
+    const roles = ['chef', 'waiter', 'host'];
+    const out = [];
+    for (const role of roles) {
+      for (const s of this.schedule.staffInRole(role)) {
+        out.push({ id: s.id, role, affinityRole: s.affinityRole, level: s.level });
+      }
+    }
+    return out;
+  }
+
+  /** 只读 getter：当前已解锁菜品 id 数组（供 E7 UI / 需求-解锁匹配展示）。 */
+  getUnlockedDishes() {
+    return Array.from(this.dishes.unlocked);
+  }
+
+  /** 只读 getter：当前 I_eff（E7 HUD 展示）。 */
+  getIeff() {
+    return this.computeIeff();
+  }
+
   /** 计算当前 I_eff（含三岗加成 + 适配 + 主动 + 羁绊 idle）。 */
   computeIeff() {
     const b = this.schedule.breakdown();
