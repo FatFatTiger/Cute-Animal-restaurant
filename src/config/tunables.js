@@ -64,6 +64,21 @@ const TUNED = {
   // —— Phase 2 · HUB 解锁门槛（TBD 待真机验证「勿过早/过晚开放」）——
   WAREHOUSE_UNLOCK_DISH_COUNT: 3, // 已解锁菜数 ≥ 此值 → 囤囤仓开放（双入口：餐厅也可解锁）
   LOUNGE_UNLOCK_ROSTER_COUNT: 6,  // 已拥有动物数 ≥ 此值 → 撸毛馆开放
+
+  // —— Phase 3 · 离线收益待领取上限（TBD 待真机调）——
+  // 离线收益先进入「待领取」缓冲（仅星券），受 cap 限制；达上限后不再累积，
+  // 须上线点击领取后才清零并恢复累积。cap = dormRate × OFFLINE_FACTOR × OFFLINE_CAP_HOURS × 3600（秒）。
+  // 默认 4h，与 LOCKED.T_CAP_INIT 时长一致，使上限成为真正可触达的封顶线（TBD 真机调参：想更频繁领取可下调）。
+  // 注：2026-07-29 双流经济修订后 cap base 由 I_eff 改为 dormRate（见 idle.js capStars）。
+  OFFLINE_CAP_HOURS: 4,
+
+  // —— Phase 3.5 · 双流经济（§2.5，tunable，非锁参，标注待复核）——
+  // 在线收益由 100% 时间流重构为「餐厅事件流(主) + 宿舍时间流(辅)」（GDD §2.5 重大修订）。
+  //  DORM_SHARE：宿舍速率占 I_eff 比例 → 宿舍占在线 ≈20%、餐厅 ≈80%（典型游玩）。
+  //  T_ORDER：餐厅每单服务周期（秒）→ 离散结算节奏与飘字频率；不改变总速率 I_eff。
+  // 两者均为非锁参 tunable（待 design-strategist 复核签字），锁参 OFFLINE_FACTOR / T_CAP_INIT 零改动。
+  DORM_SHARE: 0.25, // 宿舍速率 = DORM_SHARE × I_eff（§2.5.2）
+  T_ORDER: 5, // 餐厅每单服务周期（秒），用户 2026-07-29 拍板由 3s 放慢为 5s（§2.5.1）
 };
 
 // 锁参红线（绝不可动）：见任务书与 GDD 复核签字（文策渊 2026-07-28）。

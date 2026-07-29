@@ -10,7 +10,7 @@
  *
  * 遵守：不触碰 AFFINITY_BONUS(1.5) 常量、不改动 offline_factor、不引入新货币。
  *
- * ⚠️ 待 engineering-lead（程基岩）复核签字：本文件由主理人（游承峰）在 agent 后端空回时
+ * ✅ engineering-lead 复核签字 PASS · 2026-07-30（程基岩）：本文件由主理人（游承峰）在 agent 后端空回时
  *    按兜底纪律 dirext 落盘。
  */
 

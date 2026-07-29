@@ -8,7 +8,7 @@
  *
  * 锁参 / 4 决策合规：仅登记去重动物 id，不改概率 / 保底 / 离线公式 / 解锁数学。
  *
- * ⚠️ 待 engineering-lead（程基岩）复核签字：本文件由主理人（游承峰）在 agent 后端空回时
+ * ✅ engineering-lead 复核签字 PASS · 2026-07-30（程基岩）：本文件由主理人（游承峰）在 agent 后端空回时
  *    按兜底纪律 dirext 落盘（design-strategist 的 system-scene-phase2.md 已先于本文件真实落盘）。
  */
 

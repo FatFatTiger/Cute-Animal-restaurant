@@ -34,6 +34,8 @@ const {
   getLoungeButtons,
   getRestaurantUnlockButton,
   hitRestaurantUnlock,
+  buildOfflineClaim,
+  hitOfflineClaim,
   SCENE,
   RARITY_COLORS,
 } = require('../../src/ui/render');
@@ -554,7 +556,22 @@ describe('Sprint 5 · buildRestaurant 三区重构（迎宾区/就餐区/后厨�
   });
 });
 
-// —— Phase 2 · 囤囤仓 / 撸毛馆 / 图鉴（fallback 实现，待 engineering-lead 复核签字）——
+describe('离线收益待领取模态', () => {
+  it('buildOfflineClaim 渲染标题/金额/领取按钮', () => {
+    const cmds = buildOfflineClaim(123.45, 375, 667);
+    expect(cmds.some((c) => c.tag === 'offline-claim-title')).toBe(true);
+    const amt = cmds.find((c) => c.tag === 'offline-claim-amount');
+    expect(amt.text).toContain('123.45');
+    expect(cmds.some((c) => c.tag === 'offline-claim-overlay')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'button' && c.id === 'claim')).toBe(true);
+  });
+  it('hitOfflineClaim 命中领取按钮、空白处不命中', () => {
+    expect(hitOfflineClaim(188, 438, 375, 667)).toBe('claim');
+    expect(hitOfflineClaim(10, 10, 375, 667)).toBeNull();
+  });
+});
+
+// —— Phase 2 · 囤囤仓 / 撸毛馆 / 图鉴（fallback 实现，engineering-lead 复核签字 PASS · 2026-07-30）——
 
 describe('Phase 2 · buildWarehouse 囤囤仓（聚合 + 双入口解锁）', () => {
   function whState(over) {

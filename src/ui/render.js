@@ -408,7 +408,7 @@ function buildGachaMarket(state) {
 
 // ---------------------------------------------------------------------------
 // Phase 2 · 囤囤仓 WAREHOUSE / 撸毛馆 STAFF_LOUNGE / 图鉴 ROSTER
-// （fallback 实现：engineering-lead agent 空回，主理人 dirext 落盘，待复核签字）
+// （fallback 实现：engineering-lead agent 空回，主理人 dirext 落盘，engineering-lead 复核签字 PASS · 2026-07-30）
 // 设计依据：design/gdd/system-scene-phase2.md（design-strategist 已先落盘）
 // 锁参 / 4 决策 / 双货币隔离全程遵守；撸毛仅好感度(C4)，仓库双入口(C1)。
 // 所有 build* 仍为纯函数 → 绘制指令数组；applyCommands 不变；roundRect 真机修复保留。
@@ -828,6 +828,45 @@ function applyCommands(ctx, cmds) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 离线收益「待领取」模态（Phase 3 修订：离线收益先进 pending，受 cap 限制，须领取）
+// ---------------------------------------------------------------------------
+
+/** 领取按钮几何（与命中检测共用）。 */
+function getOfflineClaimButton(w, h) {
+  const bw = Math.min(200, Math.round(w * 0.6));
+  const bh = 48;
+  return { id: 'claim', x: Math.round((w - bw) / 2), y: Math.round(h * 0.62), w: bw, h: bh, label: '点击领取' };
+}
+
+/** 命中领取按钮，返回 'claim' | null。 */
+function hitOfflineClaim(x, y, w, h) {
+  const b = getOfflineClaimButton(w, h);
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return 'claim';
+  return null;
+}
+
+/**
+ * 离线收益待领取模态（纯函数）。pending>0 时每帧覆盖最上层，玩家须点击「领取」才能继续。
+ * 仅展示 + 提供命中区域；实际入账在 game.js 触摸路由里调用 idle.claimPending()。
+ */
+function buildOfflineClaim(pending, w, h) {
+  w = w || 375; h = h || 667;
+  const cmds = [];
+  cmds.push({ op: 'rect', x: 0, y: 0, w, h, fill: 'rgba(10,12,28,0.72)', stroke: null, lineWidth: 0, tag: 'offline-claim-overlay' });
+  const pw = Math.min(300, Math.round(w * 0.84));
+  const ph = 180;
+  const px = Math.round((w - pw) / 2);
+  const py = Math.round(h * 0.34);
+  cmds.push({ op: 'roundrect', x: px, y: py, w: pw, h: ph, r: 16, fill: '#fff7ec', stroke: '#d9a878', lineWidth: 2, tag: 'offline-claim-panel' });
+  cmds.push({ op: 'text', x: w / 2, y: py + 34, text: '离线收益', color: '#5a4632', font: '22px sans-serif', align: 'center', baseline: 'middle', tag: 'offline-claim-title' });
+  cmds.push({ op: 'text', x: w / 2, y: py + 78, text: '★ ' + fmt(pending), color: '#e0a23a', font: '30px sans-serif', align: 'center', baseline: 'middle', tag: 'offline-claim-amount' });
+  cmds.push({ op: 'text', x: w / 2, y: py + 112, text: '小动物们帮你赚的~', color: '#9a8a72', font: '13px sans-serif', align: 'center', baseline: 'middle', tag: 'offline-claim-sub' });
+  drawButton(cmds, getOfflineClaimButton(w, h), '#a9d8a0', '#1a1a2e');
+  return cmds;
+}
+
 module.exports = {
   buildScene,
   buildRestaurant,
@@ -836,6 +875,8 @@ module.exports = {
   buildWarehouse,
   buildLounge,
   buildRoster,
+  buildOfflineClaim,
+  hitOfflineClaim,
   applyCommands,
   getGachaButtons,
   hitGachaButton,

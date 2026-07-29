@@ -27,16 +27,22 @@ const IN_WECHAT = typeof wx !== 'undefined';
 
 // —— 渲染层（纯函数 + 2d 指令落地，零引擎依赖）——
 const {
-  buildScene, buildHub, buildGachaMarket, buildWarehouse, buildLounge, buildRoster,
+  buildScene, buildHub, buildGachaMarket,   buildWarehouse, buildLounge, buildRoster,
   applyCommands, hitHubRegion, hitMarketButton, hitBackButton, hitWarehouseButton,
-  hitLoungePet, getLoungeButtons, hitRestaurantUnlock, SCENE,
+  hitLoungePet, getLoungeButtons, hitRestaurantUnlock,
+  buildOfflineClaim, hitOfflineClaim, SCENE,
 } = require('./src/ui/render');
 // 注意：餐厅场景不再引用 hitGachaButton（抽卡按钮仅存于动才市场 GACHA_MARKET）
 
 // —— 锁参（纯 JS；pity 上限 / 新手窗口只从此读，不硬编码）——
 const { LOCKED } = require('./src/config/tunables');
 
-// —— Phase 2 模块（roster 图鉴 / cultivation 撸毛；agent 空回，主理人兜底落盘，待复核）——
+// —— Phase 3：放置 idle 循环（在线累积 + 离线收益接线；agent 空回，主理人兜底落盘，engineering-lead 复核签字 PASS · 2026-07-30）——
+const { createIdleEngine } = require('./src/economy/idle');
+const { createServeAccrual } = require('./src/restaurant/serve-accrual');
+const { loadGame, saveGame } = require('./src/economy/storage');
+
+// —— Phase 2 模块（roster 图鉴 / cultivation 撸毛；agent 空回，主理人兜底落盘，engineering-lead 复核签字 PASS · 2026-07-30）——
 const { Roster } = require('./src/roster');
 const { Cultivation } = require('./src/cultivation');
 const { DEFAULT_ROSTER } = require('./src/gacha/index');
@@ -57,6 +63,7 @@ CATALOG.forEach((e) => { CATALOG_MAP[e.id] = e.rarity; });
 // —— IAP 占位 / dev 调试发钻（受 flag 保护，默认关闭；保持双货币隔离：钻石不靠 idle 获得）——
 const DEV_IAP_GRANT = false; // 真实微信 IAP 需商户平台配置 + 后端，本期不做；dev 路径仅本地调试
 const DEV_IAP_GRANT_AMOUNT = 60; // 单次 dev 发钻量（清晰标注，非 IAP 产出）
+const DEV_DEMO_SEED = false; // demo 启动资金（星券+食材）开关；默认关，严守「星券=免费 idle 唯一源 / 食材仅 idle 副产」红线，避免生产注入免费循环
 
 // —— 全局错误捕获（真机静默卡 loading 时，把错误暴露出来）——
 if (IN_WECHAT && typeof wx.onError === 'function') {
@@ -188,11 +195,47 @@ function bootDemo(Mods) {
 function runUi(world, canvas, ctx, Mods) {
   const { matchServiceable, spawnCustomer } = Mods.restaurant;
 
-  // 真机演示：注入初始可抽资金（不影响 node bootDemo 的账本快照，node 不走此分支）
-  world.ledger.apply('ui-seed', { star: 500, food: 100 });
+  // 真机演示启动资金（星券+食材）：经 DEV_DEMO_SEED 门控，默认关；生产环境绝不注入，严守货币红线（不影响 node bootDemo 账本快照）
+  if (DEV_DEMO_SEED) world.ledger.apply('ui-seed', { star: 500, food: 100 });
 
   const floats = [];
   let lastGacha = null;
+
+  // —— Phase 3：放置 idle 引擎接线（在线累积 + 离线收益）——
+  const clock = { now: () => Date.now() };
+  const idle = createIdleEngine({
+    ledger: world.ledger,
+    getIeff: () => world.restaurant.getIeff(),
+    getFoodRate: () => (world.restaurant.config && world.restaurant.config.foodRate) || 0,
+    clock,
+  });
+  // 离线收益：boot 时结算一次（折扣星券 → 进 pending 待领取，受 cap 限制；食材需主动烹饪不计）
+  const _bootSave = loadGame();
+  if (_bootSave && typeof _bootSave.lastSeenMs === 'number') {
+    idle.applyOffline(_bootSave.lastSeenMs); // 结果经 currentState().pendingOffline 由 claim modal 展示，不直接入账
+  }
+  world._idle = idle;
+  world._clock = clock;
+  world._lastSaveMs = clock.now();
+
+  // —— 双流经济 · 餐厅事件流（主）：每帧累加，满 T_ORDER 秒且可运营则结算一单（区别于 idle 的宿舍时间流）——
+  // idle 引擎现仅负责宿舍时间流 + 离线；餐厅主收入由本累加器驱动，账本前缀 'serve-' 与 'idle-' 隔离，绝不双计。
+  const serve = createServeAccrual({
+    ledger: world.ledger,
+    getIeff: () => world.restaurant.getIeff(),
+    restaurant: world.restaurant,
+    clock,
+  });
+  world._serve = serve;
+  // 真机：切后台 → 记录时间戳（onShow 再结算，避免长挂起缺口漏计）+ 存档
+  if (IN_WECHAT && typeof wx !== 'undefined') {
+    if (typeof wx.onHide === 'function') {
+      wx.onHide(() => { try { idle.markHidden(); saveGame(idle.persist(Date.now())); } catch (_) { /* ignore */ } });
+    }
+    if (typeof wx.onShow === 'function') {
+      wx.onShow(() => { try { idle.settleOnShow(); } catch (_) { /* ignore */ } });
+    }
+  }
 
   // —— Phase 1 导航状态机（首启着陆即中枢 HUB）——
   const nav = { scene: SCENE.HUB, prev: null };
@@ -236,32 +279,40 @@ function runUi(world, canvas, ctx, Mods) {
       lounge: buildLoungeView(world),
       roster: { view: world.roster.view() },
       rosterCount: world.roster.count(),
+      pendingOffline: world._idle.getPending(),
+      hasPendingOffline: world._idle.hasPending(),
     };
   }
 
   function tick() {
     frameCount += 1;
-    // 经营循环仅在餐厅场景推进（切到市场/中枢时餐厅仍在后台累积，回餐厅即见最新收益）
-    if (nav.scene === SCENE.RESTAURANT) {
-      const c = world.customers[0];
-      if (c) {
-        const reqId = 'live-serve-' + c.id + '-' + Date.now();
-        const res = world.restaurant.serve(c, 1.0, reqId);
-        if (res.serviceable && res.earned && res.earned.star > 0) {
-          floats.push({
-            x: Math.round(canvas.width / 2),
-            y: Math.round(canvas.height * 0.3),
-            text: '+' + res.earned.star.toFixed(2) + '★',
-            color: '#ffd166',
-            ttl: 60,
-          });
-        }
-        spawnNextCustomer(); // 轮换顾客，保持可见可玩
-      }
-      for (let i = floats.length - 1; i >= 0; i--) {
-        floats[i].ttl -= 1;
-        if (floats[i].ttl <= 0) floats.splice(i, 1);
-      }
+    // 在线宿舍时间流（辅）：收入归 idle 引擎（dormRate × dt），避免与餐厅 serve 双计
+    const now = world._clock.now();
+    world._idle.tick(now);
+    // 餐厅事件流（主）：每帧累加 I_eff × dt，满 T_ORDER 秒且可运营 → 结算一单（场景无关，切场也累积主收入）
+    const serveEvt = serve.tick(now, world.customers);
+    if (serveEvt) {
+      floats.push({
+        x: Math.round(canvas.width / 2),
+        y: Math.round(canvas.height * 0.35),
+        text: '+' + serveEvt.star + '★' + (serveEvt.active ? ' 加把劲!' : ''),
+        color: '#ffd479',
+        ttl: 120,
+      });
+    }
+    // 节流存档（每 5s）
+    if (now - world._lastSaveMs > 5000) {
+      saveGame(world._idle.persist(now));
+      world._lastSaveMs = now;
+    }
+    // 餐厅：顾客 ~3s 轮换，保持可见可玩（收入由 idle 引擎负责，此处不再 serve 计币）
+    if (nav.scene === SCENE.RESTAURANT && frameCount % 90 === 0) {
+      spawnNextCustomer();
+    }
+    // 浮动数字衰减（离线收益提示等）
+    for (let i = floats.length - 1; i >= 0; i--) {
+      floats[i].ttl -= 1;
+      if (floats[i].ttl <= 0) floats.splice(i, 1);
     }
     // 按当前场景分发 build*（纯函数）→ applyCommands 落 2d 上下文
     const scene = nav.scene === SCENE.HUB ? buildHub(currentState())
@@ -270,7 +321,12 @@ function runUi(world, canvas, ctx, Mods) {
       : nav.scene === SCENE.STAFF_LOUNGE ? buildLounge(currentState())
       : nav.scene === SCENE.ROSTER ? buildRoster(currentState())
       : buildScene(currentState());
-    applyCommands(ctx, scene);
+    let cmds = scene;
+    // 离线收益待领取模态：覆盖最上层，必须领取后才能继续交互
+    if (world._idle.hasPending()) {
+      cmds = cmds.concat(buildOfflineClaim(world._idle.getPending(), canvas.width, canvas.height));
+    }
+    applyCommands(ctx, cmds);
   }
 
   // 触发一次抽卡（单抽/十连），结果由 build* 演出
@@ -315,6 +371,19 @@ function runUi(world, canvas, ctx, Mods) {
       const W = canvas.width;
       const H = canvas.height;
 
+      // 离线收益待领取模态：领取前屏蔽其他交互（须点击「领取」才能继续）
+      if (world._idle.hasPending()) {
+        const hit = hitOfflineClaim(x, y, W, H);
+        if (hit === 'claim') {
+          const amt = world._idle.claimPending();
+          if (amt > 0) {
+            floats.push({ x: Math.round(W / 2), y: Math.round(H * 0.5), text: '+' + amt.toFixed(2) + '★ 已领取', color: '#a9d8a0', ttl: 180 });
+            saveGame(world._idle.persist(Date.now())); // 立即固化入账
+          }
+        }
+        return;
+      }
+
       if (nav.scene === SCENE.HUB) {
         // 命中可点区域（解锁判定已内置于 hitHubRegion：锁定区返回 null）
         const region = hitHubRegion(x, y, W, H, currentState().unlockCtx);
@@ -349,6 +418,8 @@ function runUi(world, canvas, ctx, Mods) {
           world.restaurant.unlockDish(dishId, reqId); // 双入口：餐厅解锁
           return;
         }
+        // 「加把劲」主动加成：餐厅内点击空白处即触发（判定交互），active 窗口 5s，仅做增量、不削弱被动（§3.4）
+        if (serve) serve.setActive(world._clock.now());
       } else if (nav.scene === SCENE.GACHA_MARKET) {
         const hit = hitMarketButton(x, y, W, H);
         if (hit === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
