@@ -53,6 +53,10 @@
         "type": "folder"
       },
       {
+        "value": ".github",
+        "type": "folder"
+      },
+      {
         "value": "package.json",
         "type": "file"
       },
