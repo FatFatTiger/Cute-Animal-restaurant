@@ -3,6 +3,8 @@
 > 主理人：游承峰（编排者）｜日期：2026-07-28｜范围：design/gdd 下 6 份文档
 > 触发：用户 2026-07-28 20:52 确认 4 项设计决策，要求修订 6 份 GDD 后再进 Phase 5。
 
+> ✅ **【design-strategist 复核签字 · 文策渊 · 2026-07-30 · 结论：PASS（带 CONCERNS）】**：6 份 GDD 兜底落盘的「员工/顾客/菜品解锁」修订经复核，新增常数（三岗 chef/waiter +8%、host +6%、affinity 1.5、解锁曲线 200×1.35ⁿ / 40×1.30ⁿ、active +0.15）全部命中 TUNED、均为 tunable 非锁参；零货币 / 双货币隔离不变量未破坏；锁参（R60/SR30/SSR10、N=0%、50 保底、`offline_factor=0.20`）原样保留。CONCERN：星券三方竞争扩展重算仍待 Phase 5 专项（详见 `production/design-review-2026-07-30.md`）。
+
 ## 执行路径（含一次 flaky 兜底）
 1. 派 **design-strategist** 修订 6 份 GDD → 子 agent 后端再次 flaky，回传"完成"但**磁盘 mtime 未变、无内容**（与 HANDOFF §8 记载同源）。
 2. 按 HANDOFF §8 授权，**主理人本地兜底执行**：用本地工具直接改写 6 份，全部标注「【主理人本地代执行 · 待 design-strategist 复核签字】」。
@@ -18,12 +20,12 @@
 | 无新主导策略 | ✓ 三岗同量级软补充；星券三方竞争(升级/抽卡/解锁)归为战略张力 |
 | 历史不一致修正 | ✓ concept "金币"→"星券"；consistency offline_factor 0.25→0.20 |
 
-**CONCERNS（均 tunable，待 design-strategist 复核签字）：**
+**CONCERNS（均 tunable，design-strategist 复核签字 PASS · 2026-07-30）：**
 - 三岗加成常数（chef/waiter 每级 +8%、host 每级 +6%）
 - 岗位适配 `affinity_bonus = 1.5`
 - 菜品解锁曲线（星券 `200×1.35ⁿ` / 食材 `40×1.30ⁿ`）
 - 主动加成 `active_bonus = +0.15`（点击）
-- §6-A：`offline_factor=0.20` 仍待 design-strategist 正式签字
+- §6-A：`offline_factor=0.20` **design-strategist 复核签字 PASS · 2026-07-30（锁参零改动，详见 production/design-review-2026-07-30.md）**
 
 ## 修订文件清单（版本 / mtime）
 | 文件 | 版本 | 改动量 |

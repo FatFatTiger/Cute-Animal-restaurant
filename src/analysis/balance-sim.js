@@ -11,6 +11,7 @@ const OFFLINE_FACTOR = LOCKED.OFFLINE_FACTOR; // 离线效率（锁参，R-BAL-4
 const T_CAP_SEC = LOCKED.T_CAP_INIT;          // 离线累积上限 4h
 const ACTIVE_SEC = 20 * 60;                   // 每日活跃 20min（分析脚本常量，非运行时）
 const OFFLINE_SEC = 8 * 3600;                 // 每日离线 8h（受 T_CAP 截断）
+const DORM_SHARE = TUNED.DORM_SHARE;          // 双流占比：宿舍=25%，餐厅=75%（tunable，非锁参）
 
 function recipeMult(lv){ return 1 + TUNED.RECIPE_PER_LEVEL * (lv - 1); }
 function stationMult(lv){ return 1 + TUNED.STATION_PER_LEVEL * (lv - 1); }
@@ -23,9 +24,12 @@ function ieff(C, rLv, sLv, nBond){
 }
 function daily(C, rLv, sLv, nBond){
   const I = ieff(C, rLv, sLv, nBond);
-  const online = I * ACTIVE_SEC;
-  const offline = I * OFFLINE_FACTOR * Math.min(OFFLINE_SEC, T_CAP_SEC);
-  return { I, online, offline, total: online + offline };
+  const dormRate = DORM_SHARE * I;                                  // 双流：宿舍 = DORM_SHARE × I_eff
+  const restaurantOnline = I * ACTIVE_SEC;                          // 在线·餐厅（主收入流，事件流等效 I_eff）
+  const dormOnline = dormRate * ACTIVE_SEC;                         // 在线·宿舍涓流（辅，含在线期）
+  const offline = dormRate * OFFLINE_FACTOR * Math.min(OFFLINE_SEC, T_CAP_SEC); // 离线仅宿舍
+  const total = restaurantOnline + dormOnline + offline;
+  return { I, restaurantOnline, dormOnline, offline, total };
 }
 
 const tiers = {
@@ -44,10 +48,11 @@ for (const [name, t] of Object.entries(tiers)) {
   const nextSeat = seatCost(seatN + 1);
   const nextBranch = branchCost(t.rLv); // recipe/station 同级
   console.log(`\n[${name}] C=${t.C} recipeLv=${t.rLv} stationLv=${t.sLv} bond=${t.nBond}`);
-  console.log(`  I_eff        = ${d.I.toFixed(4)} 星券/秒`);
-  console.log(`  在线(20min)  = ${d.online.toFixed(0)} 星券/日`);
-  console.log(`  离线(4h上限) = ${d.offline.toFixed(0)} 星券/日`);
-  console.log(`  合计         = ${d.total.toFixed(0)} 星券/日`);
+  console.log(`  I_eff(餐厅速率)      = ${d.I.toFixed(4)} 星券/秒`);
+  console.log(`  在线·餐厅(20min)    = ${d.restaurantOnline.toFixed(0)} 星券/日`);
+  console.log(`  在线·宿舍(20min)    = ${d.dormOnline.toFixed(0)} 星券/日`);
+  console.log(`  离线·宿舍(4h上限)   = ${d.offline.toFixed(0)} 星券/日`);
+  console.log(`  合计                 = ${d.total.toFixed(0)} 星券/日`);
   console.log(`  全投抽卡     = ${pullsAll.toFixed(1)} 抽/日 (~${(pullsAll*7).toFixed(0)} 抽/周)`);
   console.log(`  50保底可达   ≈ ${weeksToPityAll.toFixed(1)} 周 (若全投抽卡)`);
   console.log(`  下一级座位费 = ${nextSeat.toFixed(0)} 星券 | 下一级菜谱/工位费 = ${nextBranch.toFixed(0)} 星券`);
@@ -62,9 +67,9 @@ console.log(`  bond 上限 = +30% (10只满羁绊上岗)`);
 console.log(`  bond 占整体倍率: ${lateIBond.toFixed(3)} vs 无bond ${lateI.toFixed(3)} → 增量 ${((lateIBond/lateI-1)*100).toFixed(0)}%`);
 console.log(`  结论: bond(+30%) < station单分支(+${((stationOnly*100-100).toFixed(0))}%) → 养成为软补充, 非主导 ✓`);
 
-console.log('\n=== 离线 vs 在线 ===');
+console.log('\n=== 离线 vs 在线（双流口径）===');
 const e = daily(4,1,1,0);
-console.log(`  早期: 离线/${e.offline.toFixed(0)} vs 在线/${e.online.toFixed(0)} = 比值 ${(e.offline/e.online).toFixed(1)}x (受4h×20%封顶,  genre内合理)`);
+console.log(`  早期: 离线宿舍/${e.offline.toFixed(0)} vs 在线餐厅/${e.restaurantOnline.toFixed(0)} = 比值 ${(e.offline/e.restaurantOnline).toFixed(2)}x (宿舍为辅, 离线仅宿舍×0.20封顶, genre内合理)`);
 
 console.log('\n=== 碎片/升星节奏 ===');
 console.log(`  R重复+20碎片, 升星需80 → 4只重复R可升1星`);
