@@ -12,6 +12,7 @@
 
 const {
   buildScene,
+  buildRestaurant,
   buildHub,
   buildGachaMarket,
   applyCommands,
@@ -474,6 +475,65 @@ describe('roundRect 严格真机回归（WeChat macOS WebKit 3.17.0，radii 必�
     expect(rec).toBeTruthy();
     expect(Array.isArray(rec.radii)).toBe(true);
     expect(rec.radii[0]).toBe(12);
+  });
+});
+
+// —— Sprint 5 · 餐厅三区重构（RESTAURANT 分支）：迎宾区/就餐区/后厨区 + 无抽卡按钮 ——
+
+describe('Sprint 5 · buildRestaurant 三区重构（迎宾区/就餐区/后厨区，餐厅无抽卡按钮）', () => {
+  it('输出含三区标牌文字（迎宾区/就餐区/后厨区）', () => {
+    const cmds = buildRestaurant(baseState());
+    expect(cmds.some((c) => c.tag === 'zone-label-welcome' && c.text === '迎宾区')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'zone-label-dining' && c.text === '就餐区')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'zone-label-kitchen' && c.text === '后厨区')).toBe(true);
+  });
+
+  it('餐厅不含单抽/十连按钮（无 label 为单抽/十连的 button-label cmd）', () => {
+    const cmds = buildRestaurant(baseState());
+    const gachaBtns = cmds.filter((c) => c.tag === 'button-label' && (/单抽/.test(c.text) || /十连/.test(c.text)));
+    expect(gachaBtns.length).toBe(0);
+  });
+
+  it('输出含至少 1 个顾客（落座或排队）的 critter / 需求气泡', () => {
+    const cmds = buildRestaurant(baseState());
+    const hasCustomer =
+      cmds.some((c) => c.tag === 'critter-body' && /^cust-/.test(c.id || '')) ||
+      cmds.some((c) => c.tag === 'demand');
+    expect(hasCustomer).toBe(true);
+  });
+
+  it('员工按 role 分区域：三岗各 1 名，岗位小标含 迎/服/厨', () => {
+    const cmds = buildRestaurant(baseState());
+    const staffLabels = cmds.filter((c) => c.tag === 'staff-label');
+    expect(staffLabels.length).toBe(3);
+    expect(staffLabels.some((l) => /迎/.test(l.text))).toBe(true);
+    expect(staffLabels.some((l) => /服/.test(l.text))).toBe(true);
+    expect(staffLabels.some((l) => /厨/.test(l.text))).toBe(true);
+  });
+
+  it('后厨区含烹饪图元：锅(pot roundrect) + 火苗(flame ellipse)', () => {
+    const cmds = buildRestaurant(baseState());
+    expect(cmds.some((c) => c.tag === 'pot' && c.op === 'roundrect')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'flame' && c.op === 'ellipse')).toBe(true);
+  });
+
+  it('顾客确定性分流：前 seats 个落座就餐区，其余排队迎宾区（无随机）', () => {
+    const many = baseState({
+      seats: 4,
+      customers: [
+        { id: 'c0', dishDemand: 'dish_1', serviceable: true },
+        { id: 'c1', dishDemand: 'dish_2', serviceable: true },
+        { id: 'c2', dishDemand: 'dish_1', serviceable: true },
+        { id: 'c3', dishDemand: 'dish_2', serviceable: true },
+        { id: 'c4', dishDemand: 'dish_1', serviceable: true },
+        { id: 'c5', dishDemand: 'dish_2', serviceable: true },
+      ],
+    });
+    const cmds = buildRestaurant(many);
+    const custCritters = cmds.filter((c) => c.tag === 'critter-body' && /^cust-/.test(c.id || ''));
+    expect(custCritters.length).toBe(6);
+    const bubbles = cmds.filter((c) => c.tag === 'demand');
+    expect(bubbles.length).toBe(6);
   });
 });
 

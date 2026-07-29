@@ -399,6 +399,71 @@ function buildGachaMarket(state) {
  * 保留原 buildScene 的全部 tag（bg/hud/restaurant/seat/staff-label/demand/demand-text/float/rarity/rarity-text）
  * 以保证既有单测不破；新增 critter-* 系列指令。
  */
+// ---------------------------------------------------------------------------
+// 餐厅区域小 helper（三岗员工 / 顾客落座 / 顾客排队；复用 appendCritter + 需求气泡样式）
+// ---------------------------------------------------------------------------
+
+/**
+ * 三岗员工：圆润 critter + 身份色(ROLE_COLORS) + 岗位小标（如「厨」/「服」/「迎」）
+ *         + 角色标签 + 等级。保留既有 tag 'staff-label' 以保证既有单测不破。
+ */
+function drawZoneStaff(cmds, st, x, y, frame, i, tag) {
+  appendCritter(cmds, { x, y, r: 14, fill: ROLE_COLORS[st.role] || '#888888', frame, phase: i * 2, id: 'staff-' + (st.id || i) });
+  cmds.push({
+    op: 'text',
+    x,
+    y: y + 22,
+    text: tag + (ROLE_LABEL[st.role] || st.role) + ' L' + (st.level || 1),
+    color: '#ffffff',
+    font: '12px sans-serif',
+    align: 'center',
+    baseline: 'middle',
+    tag: 'staff-label',
+    role: st.role,
+  });
+}
+
+/**
+ * 顾客需求气泡（圆润 critter + roundrect 气泡 + 「想要 X」+ 🔒 若不可服务）。
+ * 复用既有 demand / demand-text tag + locked 标记，既有单测不破。
+ * @param {boolean} seated 仅用于注释语义；落座与排队使用同一气泡样式，仅坐标不同（调用侧决定）。
+ */
+function drawCustomerBubble(cmds, c, x, y, frame, i) {
+  const serviceable = !!c.serviceable;
+  appendCritter(cmds, { x, y, r: 18, fill: serviceable ? '#5bc0eb' : '#6b6b8f', frame, phase: i * 3 + 1, id: 'cust-' + (c.id || i) });
+  const bx = x + 26;
+  const by = y - 14;
+  cmds.push({ op: 'roundrect', x: bx, y: by, w: 132, h: 28, r: 8, fill: serviceable ? '#ffffff' : '#777777', stroke: '#00000022', lineWidth: 1, tag: 'demand', locked: !serviceable, id: c.id });
+  cmds.push({
+    op: 'text',
+    x: bx + 8,
+    y: by + 14,
+    text: '想要 ' + (c.dishDemand || '?') + (serviceable ? '' : ' 🔒'),
+    color: serviceable ? '#1a1a2e' : '#dddddd',
+    font: '12px sans-serif',
+    align: 'left',
+    baseline: 'middle',
+    tag: 'demand-text',
+    dish: c.dishDemand,
+    locked: !serviceable,
+    id: c.id,
+  });
+}
+
+/**
+ * 纯函数：餐厅只读快照 → 绘制指令数组（Sprint 5 RESTAURANT 三区重构）。
+ *
+ * 三个清晰纵向等分区域（迎宾区 / 就餐区 / 后厨区），各自带标牌文字：
+ *  - 迎宾区：host 员工 + 未落座（排队）顾客需求气泡；
+ *  - 就餐区：N 个座位 + 已落座顾客（座位上 + 需求气泡）+ waiter 员工；
+ *  - 后厨区：chef 员工 + 烹饪图元（锅 roundrect + 火苗 ellipse，零位图）。
+ *
+ * 顾客确定性分流：前 seats 个顾客 = 落座（就餐区座位上），其余 = 排队（迎宾区）。
+ * 不随机、不改 I_eff 计算。员工按 role 分区域（chef→后厨 / waiter→就餐 / host→迎宾）。
+ *
+ * 纪律：餐厅场景**不含抽卡按钮**（抽卡仅在动才市场）；保留回村热区、HUD、I_eff/ledger
+ * 只读展示、结算浮动数字、以及 lastGacha 被动结果演出（非按钮，保留既有 rarity 单测）。
+ */
 function buildRestaurant(state) {
   const s = state || {};
   const w = (s.canvas && s.canvas.w) || 375;
@@ -408,10 +473,10 @@ function buildRestaurant(state) {
 
   cmds.push({ op: 'clear', color: BG, w, h, tag: 'bg' });
 
-  // 回村按钮（餐厅可点 → scene='HUB'）
+  // 回村按钮（餐厅可点 → scene='HUB'；保留既有热区）
   drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
 
-  // HUD：星券 / 食材 / pity
+  // HUD：星券 / 食材 / pity（保留既有 tag 'hud'，既有单测不破）
   const ledger = s.ledger || {};
   const star = ledger.star || 0;
   const food = ledger.food || 0;
@@ -422,75 +487,49 @@ function buildRestaurant(state) {
     color: '#ffffff', font: '16px sans-serif', align: 'left', baseline: 'middle', tag: 'hud',
   });
 
-  // 餐厅区
+  // 三区纵向等分
+  const top = 56;
+  const zoneH = Math.round((h - top - 16) / 3);
+  const zx = 10;
+  const zw = w - 20;
   const seats = s.seats || 4;
-  const restX = 10;
-  const restY = 56;
-  const restW = w - 20;
-  const restH = Math.round(h * 0.42);
-  cmds.push({ op: 'roundrect', x: restX, y: restY, w: restW, h: restH, r: 14, fill: '#232347', stroke: '#3a3a66', lineWidth: 2, tag: 'restaurant' });
-  cmds.push({ op: 'text', x: restX + 10, y: restY + 18, text: 'Restaurant', color: '#b8b8e0', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'restaurant-label' });
-
-  // 座位占位（圆角）
-  const seatStartX = restX + 12;
-  const seatY = restY + 34;
-  const seatSize = 28;
-  const seatGap = 8;
-  for (let i = 0; i < seats; i++) {
-    cmds.push({ op: 'roundrect', x: seatStartX + i * (seatSize + seatGap), y: seatY, w: seatSize, h: seatSize, r: 8, fill: '#2e2e55', stroke: '#4a4a7a', lineWidth: 1, tag: 'seat', index: i });
-  }
-
-  // 三岗员工（圆润 critter + 等级标签）
   const staff = s.staff || [];
-  const blockW = (restW - 24) / Math.max(1, staff.length);
-  const blockY = seatY + seatSize + 14;
-  const blockH = 46;
-  staff.forEach((st, i) => {
-    const bx = restX + 12 + i * blockW;
-    const color = ROLE_COLORS[st.role] || '#888888';
-    appendCritter(cmds, { x: bx + blockW / 2 - 18, y: blockY + blockH / 2, r: 14, fill: color, frame, phase: i * 2, id: 'staff-' + (st.id || i) });
-    cmds.push({
-      op: 'text', x: bx + blockW / 2 + 6, y: blockY + blockH / 2,
-      text: (ROLE_LABEL[st.role] || st.role) + ' L' + (st.level || 1),
-      color: '#ffffff', font: '13px sans-serif', align: 'center', baseline: 'middle', tag: 'staff-label', role: st.role,
-    });
-  });
-
-  // 顾客区（圆润 critter + 需求气泡）
-  const custY = restY + restH + 24;
   const customers = s.customers || [];
-  customers.forEach((c, i) => {
-    const cx = Math.round(w / 2);
-    const cy = custY + 30 + i * 60;
-    const serviceable = !!c.serviceable;
-    appendCritter(cmds, { x: cx, y: cy, r: 18, fill: serviceable ? '#5bc0eb' : '#6b6b8f', frame, phase: i * 3 + 1, id: 'customer-' + (c.id || i), label: '客' });
-    const bubbleColor = serviceable ? '#ffffff' : '#777777';
-    const bx = cx + 26;
-    const by = cy - 14;
-    cmds.push({ op: 'roundrect', x: bx, y: by, w: 132, h: 28, r: 8, fill: bubbleColor, stroke: '#00000022', lineWidth: 1, tag: 'demand', locked: !serviceable });
-    const demandText = '想要 ' + (c.dishDemand || '?') + (serviceable ? '' : ' 🔒');
-    cmds.push({
-      op: 'text', x: bx + 8, y: by + 14,
-      text: demandText, color: serviceable ? '#1a1a2e' : '#dddddd',
-      font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'demand-text', dish: c.dishDemand, locked: !serviceable,
-    });
-  });
+  const seatStep = Math.floor((zw - 32) / Math.max(1, seats));
 
-  // 结算浮动数字
+  // 1) 迎宾区（host + 排队顾客）
+  cmds.push({ op: 'roundrect', x: zx, y: top, w: zw, h: zoneH, r: 14, fill: '#3a2f4a', stroke: '#D9A878', lineWidth: 2, tag: 'zone-welcome' });
+  cmds.push({ op: 'text', x: zx + 12, y: top + 18, text: '迎宾区', color: '#F3E2C7', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-welcome' });
+  staff.filter((st) => st.role === 'host').forEach((st, i) => drawZoneStaff(cmds, st, zx + 20 + i * 54, top + zoneH - 28, frame, i, '迎'));
+  customers.slice(seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 20 + i * 60, top + zoneH - 28, frame, i));
+
+  // 2) 就餐区（座位 + 已落座顾客 + waiter）
+  cmds.push({ op: 'roundrect', x: zx, y: top + zoneH, w: zw, h: zoneH, r: 14, fill: '#233a2e', stroke: '#A9D8A0', lineWidth: 2, tag: 'zone-dining' });
+  cmds.push({ op: 'text', x: zx + 12, y: top + zoneH + 18, text: '就餐区', color: '#A9D8A0', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-dining' });
+  for (let i = 0; i < seats; i++) {
+    cmds.push({ op: 'roundrect', x: zx + 16 + i * seatStep, y: top + zoneH + 34, w: 28, h: 28, r: 8, fill: '#2e2e55', stroke: '#4a4a7a', lineWidth: 1, tag: 'seat', index: i });
+  }
+  customers.slice(0, seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 16 + i * seatStep + 14, top + zoneH + 34 + 14, frame, i));
+  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + zoneH + zoneH - 28, frame, i, '服'));
+
+  // 3) 后厨区（chef + 烹饪图元：锅 roundrect + 火苗 ellipse，零位图）
+  cmds.push({ op: 'roundrect', x: zx, y: top + 2 * zoneH, w: zw, h: zoneH, r: 14, fill: '#3a2e22', stroke: '#D9A878', lineWidth: 2, tag: 'zone-kitchen' });
+  cmds.push({ op: 'text', x: zx + 12, y: top + 2 * zoneH + 18, text: '后厨区', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-kitchen' });
+  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 2 * zoneH + zoneH - 28, frame, i, '厨'));
+  cmds.push({ op: 'roundrect', x: zx + 20, y: top + 3 * zoneH - 44, w: 44, h: 24, r: 6, fill: '#4a4a4a', stroke: '#222222', lineWidth: 1, tag: 'pot' });
+  cmds.push({ op: 'ellipse', x: zx + 42, y: top + 3 * zoneH - 48, rx: 12, ry: 16, fill: '#ff9f43', stroke: '#ffd166', lineWidth: 1, tag: 'flame' });
+
+  // 结算浮动数字（保留既有 tag 'float'）
   const floats = s.floats || [];
   floats.forEach((f) => {
     cmds.push({ op: 'text', x: f.x, y: f.y, text: f.text, color: f.color || '#ffd166', font: '16px sans-serif', align: 'center', baseline: 'middle', tag: 'float' });
   });
 
-  // 抽卡结果演出（稀有度色块 + 动物名）
+  // 抽卡结果演出（被动展示，非按钮；保留既有 tag 'rarity'/'rarity-text'，既有单测不破）
   const lg = s.lastGacha;
   if (lg && lg.draws && lg.draws.length) {
-    const panelY = custY + 24 + (customers.length ? customers.length * 60 : 0) + 10;
-    appendGachaResult(cmds, lg, panelY);
+    appendGachaResult(cmds, lg, h - 96);
   }
-
-  // 抽卡按钮（保留 E7：餐厅内也可单抽/十连）
-  for (const b of getGachaButtons(w, h)) drawButton(cmds, b, '#ff8c5a', '#1a1a2e');
 
   return cmds;
 }

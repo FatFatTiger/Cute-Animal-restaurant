@@ -28,8 +28,9 @@ const IN_WECHAT = typeof wx !== 'undefined';
 // —— 渲染层（纯函数 + 2d 指令落地，零引擎依赖）——
 const {
   buildScene, buildHub, buildGachaMarket,
-  applyCommands, hitGachaButton, hitHubRegion, hitMarketButton, hitBackButton, SCENE,
+  applyCommands, hitHubRegion, hitMarketButton, hitBackButton, SCENE,
 } = require('./src/ui/render');
+// 注意：餐厅场景不再引用 hitGachaButton（抽卡按钮仅存于动才市场 GACHA_MARKET）
 
 // —— 锁参（纯 JS；pity 上限 / 新手窗口只从此读，不硬编码）——
 const { LOCKED } = require('./src/config/tunables');
@@ -265,9 +266,8 @@ function runUi(world, canvas, ctx, Mods) {
           nav.scene = region;
         }
       } else if (nav.scene === SCENE.RESTAURANT) {
+        // 餐厅场景不含抽卡按钮（抽卡仅在动才市场）；只保留回村热区
         if (hitBackButton(x, y, W, H) === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
-        const hit = hitGachaButton(x, y, W, H); // 保留 E7：餐厅内也可单抽/十连
-        if (hit === 'single' || hit === 'ten') pull(hit);
       } else if (nav.scene === SCENE.GACHA_MARKET) {
         const hit = hitMarketButton(x, y, W, H);
         if (hit === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
