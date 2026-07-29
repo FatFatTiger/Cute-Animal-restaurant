@@ -1,0 +1,95 @@
+{
+  "appid": "wxe0f6e1b6f863e6ec",
+  "projectname": "animal-resto-studio",
+  "description": "可爱小动物 卡牌收集+餐厅放置经营 微信小游戏（EL-WXSHELL-001 壳）",
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "node_modules",
+        "type": "folder"
+      },
+      {
+        "value": "tests",
+        "type": "folder"
+      },
+      {
+        "value": "production",
+        "type": "folder"
+      },
+      {
+        "value": "design",
+        "type": "folder"
+      },
+      {
+        "value": "docs",
+        "type": "folder"
+      },
+      {
+        "value": "art",
+        "type": "folder"
+      },
+      {
+        "value": "jest.config.js",
+        "type": "file"
+      },
+      {
+        "value": "src/analysis",
+        "type": "folder"
+      },
+      {
+        "value": "HANDOFF.md",
+        "type": "file"
+      },
+      {
+        "value": "§5-revision-report.md",
+        "type": "file"
+      },
+      {
+        "value": ".workbuddy",
+        "type": "folder"
+      },
+      {
+        "value": "src/prototype",
+        "type": "folder"
+      },
+      {
+        "value": "package.json",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.json",
+        "type": "file"
+      }
+    ],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": false,
+    "minified": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "compileType": "game",
+  "simulatorPluginLibVersion": {},
+  "isGameTourist": false,
+  "editorSetting": {}
+}

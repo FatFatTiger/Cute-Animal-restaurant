@@ -1,0 +1,65 @@
+'use strict';
+
+/**
+ * 集中配置 · 引用 GDD v0.2 / v0.1.1
+ *
+ * 设计纪律（见任务书「锁参红线」「tunable 引用」）：
+ *  - TUNED 段：tunable 常数，引用 system-idle-restaurant v0.2 / system-cultivation v0.1.1，
+ *    标「待 design-strategist 复核签字，非锁参」。可在此集中调参，不得固化为锁参。
+ *  - LOCKED 段：锁参红线（绝不可动）。offline_factor=0.20 等由任务书与主理人推演落盘，
+ *    明确禁止调参。集中放置以便一处可见，但不提供任何 tunable 入口。
+ *
+ * 引用声明：本文件全部数值均来自已签字 GDD，未做任何数值发明。
+ */
+
+const TUNED = {
+  // —— 在线收益基准（system-idle-restaurant §3.1）——
+  Y_BASE: 0.04, // 基准单位座位产出 星券/秒/座（平衡可调）
+  C_INIT: 4, // 初始座位容量
+  C_MAX: 24, // 座位上限
+
+  // 升级树（§3.1 / §3.3）：工位 / 菜谱每级 +10%，idle 主缩放量
+  RECIPE_PER_LEVEL: 0.10,
+  STATION_PER_LEVEL: 0.10,
+
+  // —— 三岗加成（§3.3，tunable）——
+  CHEF_PER_LEVEL: 0.08, // 厨师每级 +8%
+  WAITER_PER_LEVEL: 0.08, // 服务员每级 +8%
+  HOST_PER_LEVEL: 0.06, // 接待每级 +6%
+  // 主适配岗整乘：affinity_bonus=1.5 是「主适配岗 ×1.5」整乘，
+  // 不内嵌进增量项（R1 复核修正已把 §3.1 归一为 §3.3 口径）。
+  AFFINITY_BONUS: 1.5,
+
+  // —— 主动加成（§3.4，tunable）——
+  ACTIVE_BONUS: 0.15, // 点击「加把劲」增量（仅做增量，不削弱被动）
+
+  // —— 食材（§3.6）——
+  FOOD_RATE: 0.02, // 食材副产 食材/秒（基准），供养成 + 菜品解锁
+
+  // —— 菜品解锁成本曲线（§3.5，n 0-based，tunable）——
+  UNLOCK_COST_STAR_BASE: 200,
+  UNLOCK_COST_STAR_RATE: 1.35,
+  UNLOCK_COST_FOOD_BASE: 40,
+  UNLOCK_COST_FOOD_RATE: 1.30,
+
+  // —— 养成 idle 加成（system-cultivation §3.2）——
+  BOND_IDLE_PER_ANIMAL: 0.03, // 家人级且上岗 +3%/只
+  BOND_IDLE_CAP: 0.30, // 上限 +30%
+  BOND_IDLE_COUNT_CAP: 10, // 仅前 10 只上岗计
+};
+
+// 锁参红线（绝不可动）：见任务书与 GDD 复核签字（文策渊 2026-07-28）。
+const LOCKED = {
+  OFFLINE_FACTOR: 0.20, // 离线效率为在线 20%（锁参红线，平衡 pass v0.2 落盘）
+  T_CAP_INIT: 14400, // 离线累积上限 初始 4h，可扩至 12h
+  // 抽卡锁参（仅引用，本 Sprint 不实现抽卡逻辑）
+  GACHA_R: 0.60,
+  GACHA_SR: 0.30,
+  GACHA_SSR: 0.10,
+  GACHA_N: 0.0,
+  PITY_HARD: 50,
+  TEN_PULL_SR_GUARANTEE: true,
+  NEWBIE_FIRST10_SR: true,
+};
+
+module.exports = { TUNED, LOCKED };

@@ -1,0 +1,5 @@
+{
+  "currencies": ["star", "diamond", "food", "shard"],
+  "initialBalances": { "star": 0, "diamond": 0, "food": 0, "shard": 0 },
+  "note": "最小示例经济配置；实际数值以 src/config/tunables.js（引用 GDD v0.2）为单一来源。"
+}

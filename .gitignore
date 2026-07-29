@@ -1,0 +1,19 @@
+# 依赖（由 npm install 生成，不纳入版本控制）
+node_modules/
+
+# 团队/代理运行时与本地工作目录缓存
+.workbuddy/
+
+# 日志
+*.log
+
+# 微信小游戏本地私有配置（本地 IDE 配置 / 类私钥，不入库）
+project.private.config.json
+
+# 本地私钥 / 密钥 / 环境变量
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*

@@ -1,0 +1,14 @@
+{
+  "animals": [
+    { "id": "cat_01", "family": "mammal", "affinityRole": "chef", "level": 3 },
+    { "id": "birb_02", "family": "bird", "affinityRole": "waiter", "level": 2 },
+    { "id": "blob_03", "family": "round", "affinityRole": "host", "level": 1 },
+    { "id": "fish_99", "family": "aquatic", "affinityRole": "chef", "level": 5 }
+  ],
+  "dishes": [
+    { "id": "dish_1", "name": "野菜沙拉", "requiredRole": "chef" },
+    { "id": "dish_2", "name": "莓果塔", "requiredRole": "waiter" },
+    { "id": "dish_3", "name": "鲜鱼汤", "requiredRole": "chef" },
+    { "id": "dish_4", "name": "蜂蜜饮", "requiredRole": "host" }
+  ]
+}
