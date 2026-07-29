@@ -53,6 +53,17 @@ const TUNED = {
   SEAT_COST_RATE: 1.5,
   BRANCH_COST_BASE: 150,
   BRANCH_COST_RATE: 1.4,
+
+  // —— Phase 2 · 撸毛馆 pet 机制（仅好感度 A，绝不产货币，对齐 §8-C4 红线）——
+  PET_COOLDOWN_SEC: 30,        // 单只 critter 撸后冷却秒数（防 spam）
+  PET_AFFINITY_GAIN: 1,        // 每次撸毛 +好感度 A（A∈[0,100]）
+  PET_DAILY_CAP: 20,           // 每 critter 每日撸毛上限（bound 好感 accrual）
+  PET_HAPPY_DURATION_SEC: 8,   // 「开心」视觉态时长（默认仅视觉，无数值 buff）
+  PET_FOOD_REWARD: 0,          // 蹭蹭回礼食材数（默认关；>0 需主编签核，破「食材仅 idle 副产」）
+
+  // —— Phase 2 · HUB 解锁门槛（TBD 待真机验证「勿过早/过晚开放」）——
+  WAREHOUSE_UNLOCK_DISH_COUNT: 3, // 已解锁菜数 ≥ 此值 → 囤囤仓开放（双入口：餐厅也可解锁）
+  LOUNGE_UNLOCK_ROSTER_COUNT: 6,  // 已拥有动物数 ≥ 此值 → 撸毛馆开放
 };
 
 // 锁参红线（绝不可动）：见任务书与 GDD 复核签字（文策渊 2026-07-28）。

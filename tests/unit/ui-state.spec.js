@@ -15,6 +15,9 @@ const {
   buildRestaurant,
   buildHub,
   buildGachaMarket,
+  buildWarehouse,
+  buildLounge,
+  buildRoster,
   applyCommands,
   hitGachaButton,
   getGachaButtons,
@@ -24,10 +27,20 @@ const {
   hitMarketButton,
   getTopBackButton,
   hitBackButton,
+  getWarehouseButtons,
+  hitWarehouseButton,
+  getLoungePetSpots,
+  hitLoungePet,
+  getLoungeButtons,
+  getRestaurantUnlockButton,
+  hitRestaurantUnlock,
   SCENE,
   RARITY_COLORS,
 } = require('../../src/ui/render');
 const { createMockCanvas } = require('../helpers/mock-canvas');
+const { Roster } = require('../../src/roster');
+const { Cultivation } = require('../../src/cultivation');
+const { Ledger } = require('../../src/economy/ledger');
 
 // 基础场景（覆盖三岗员工 + 已解锁顾客 + 账本）
 function baseState(over) {
@@ -534,6 +547,187 @@ describe('Sprint 5 · buildRestaurant 三区重构（迎宾区/就餐区/后厨�
     expect(custCritters.length).toBe(6);
     const bubbles = cmds.filter((c) => c.tag === 'demand');
     expect(bubbles.length).toBe(6);
+  });
+});
+
+// —— Phase 2 · 囤囤仓 / 撸毛馆 / 图鉴（fallback 实现，待 engineering-lead 复核签字）——
+
+describe('Phase 2 · buildWarehouse 囤囤仓（聚合 + 双入口解锁）', () => {
+  function whState(over) {
+    return Object.assign({
+      canvas: { w: 375, h: 667 },
+      warehouse: {
+        ledger: { star: 500, diamond: 0, food: 100, shard: 0 },
+        dishes: [
+          { id: 'dish_1', unlocked: true, costStar: 0, costFood: 0 },
+          { id: 'dish_2', unlocked: true, costStar: 0, costFood: 0 },
+        ],
+        nextDish: { id: 'dish_3', costStar: 200, costFood: 40 },
+      },
+      frame: 0,
+    }, over);
+  }
+
+  it('含标题 / 四币 HUD / 已解锁菜数 / 下一道成本', () => {
+    const cmds = buildWarehouse(whState());
+    expect(cmds.some((c) => c.tag === 'warehouse-title')).toBe(true);
+    const hud = cmds.find((c) => c.tag === 'hud');
+    expect(hud.text).toContain('500');
+    expect(cmds.some((c) => c.tag === 'warehouse-dish-count' && /2 道菜/.test(c.text))).toBe(true);
+    expect(cmds.some((c) => c.tag === 'warehouse-next-cost' && /dish_3/.test(c.text))).toBe(true);
+  });
+
+  it('可负担时显示解锁按钮；不足时提示且无按钮', () => {
+    const ok = buildWarehouse(whState());
+    expect(ok.some((c) => c.tag === 'button-label' && /解锁 dish_3/.test(c.text))).toBe(true);
+    const poor = buildWarehouse(whState({
+      warehouse: { ledger: { star: 0, diamond: 0, food: 0, shard: 0 }, dishes: [{ id: 'dish_1', unlocked: true }], nextDish: { id: 'dish_2', costStar: 200, costFood: 40 } },
+    }));
+    expect(poor.some((c) => c.tag === 'button-label' && /解锁/.test(c.text))).toBe(false);
+    expect(poor.some((c) => c.tag === 'warehouse-insufficient')).toBe(true);
+  });
+
+  it('不含抽卡按钮（单抽 / 十连）', () => {
+    const cmds = buildWarehouse(whState());
+    expect(cmds.filter((c) => c.tag === 'button-label' && (/单抽/.test(c.text) || /十连/.test(c.text))).length).toBe(0);
+  });
+
+  it('命中解锁按钮返回 dishId；空白处 null', () => {
+    const b = getWarehouseButtons(375, 667, whState())[0];
+    expect(hitWarehouseButton(b.x + 5, b.y + 5, 375, 667, whState())).toBe('dish_3');
+    expect(hitWarehouseButton(5, 5, 375, 667, whState())).toBeNull();
+  });
+});
+
+describe('Phase 2 · buildLounge 撸毛馆（去重动物 + 撸毛热区，仅好感度）', () => {
+  function loungeState(over) {
+    return Object.assign({
+      canvas: { w: 375, h: 667 },
+      lounge: { owned: [
+        { id: 'r_01', rarity: 'R', affinity: 10, bondTier: 0 },
+        { id: 'sr_01', rarity: 'SR', affinity: 50, bondTier: 50 },
+      ] },
+      frame: 0,
+    }, over);
+  }
+
+  it('含标题 + 图鉴入口按钮 + 每只动物 critter + 好感度', () => {
+    const cmds = buildLounge(loungeState());
+    expect(cmds.some((c) => c.tag === 'lounge-title')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'button-label' && /图鉴/.test(c.text))).toBe(true);
+    expect(cmds.filter((c) => c.tag === 'critter-body' && /^lounge-/.test(c.id || '')).length).toBe(2);
+    expect(cmds.some((c) => c.tag === 'lounge-affinity' && /10\/100/.test(c.text))).toBe(true);
+  });
+
+  it('无拥有动物时显示空态提示', () => {
+    const cmds = buildLounge(loungeState({ lounge: { owned: [] } }));
+    expect(cmds.some((c) => c.tag === 'lounge-empty')).toBe(true);
+  });
+
+  it('命中 critter 热区返回 id；空白处 null', () => {
+    const spots = getLoungePetSpots(loungeState(), 375, 667);
+    expect(spots.length).toBe(2);
+    const s0 = spots[0];
+    expect(hitLoungePet(s0.x, s0.y, 375, 667, loungeState())).toBe('r_01');
+    expect(hitLoungePet(5, 5, 375, 667, loungeState())).toBeNull();
+  });
+});
+
+describe('Phase 2 · buildRoster 图鉴（全量目录 + 🔒剪影，只读）', () => {
+  function rosterState(view) {
+    return { canvas: { w: 375, h: 667 }, roster: { view }, frame: 0 };
+  }
+
+  it('含标题；拥有显示 critter+色条，未拥有显示 🔒剪影', () => {
+    const view = [
+      { id: 'r_01', rarity: 'R', owned: true },
+      { id: 'sr_01', rarity: 'SR', owned: false },
+      { id: 'ssr_01', rarity: 'SSR', owned: true },
+    ];
+    const cmds = buildRoster(rosterState(view));
+    expect(cmds.some((c) => c.tag === 'roster-title')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'roster-owned-label' && c.text === 'r_01')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'roster-rarity-bar')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'roster-locked-mark' && c.text === '?')).toBe(true);
+  });
+});
+
+describe('Phase 2 · HUB 解锁门控（evalHubUnlock）', () => {
+  it('未达门槛：囤囤仓 / 撸毛馆仍锁定不可点', () => {
+    const regions = getHubRegions(375, 667, {});
+    const byId = {};
+    regions.forEach((r) => { byId[r.id] = r; });
+    expect(byId[SCENE.WAREHOUSE].clickable).toBe(false);
+    expect(byId[SCENE.STAFF_LOUNGE].clickable).toBe(false);
+    expect(hitHubRegion(10, 10, 375, 667, {})).toBeNull(); // 空白处（非任一区域）
+  });
+
+  it('达门槛：囤囤仓(dish≥3) / 撸毛馆(roster≥6) 可点', () => {
+    const ctx = { dishUnlockedCount: 3, rosterOwnedCount: 6 };
+    const regions = getHubRegions(375, 667, ctx);
+    const byId = {};
+    regions.forEach((r) => { byId[r.id] = r; });
+    expect(byId[SCENE.WAREHOUSE].clickable).toBe(true);
+    expect(byId[SCENE.STAFF_LOUNGE].clickable).toBe(true);
+    const r = getHubRegions(375, 667, ctx).find((x) => x.id === SCENE.WAREHOUSE);
+    expect(hitHubRegion(r.x + r.w / 2, r.y + r.h / 2, 375, 667, ctx)).toBe(SCENE.WAREHOUSE);
+  });
+});
+
+describe('Phase 2 · roster / cultivation 模块（拨测）', () => {
+  it('Roster.register 去重登记；registerMany 接受抽卡结果', () => {
+    const r = new Roster({ catalog: [{ id: 'r_01', rarity: 'R' }] });
+    r.register({ animalId: 'r_01', isDuplicate: false });
+    r.register({ animalId: 'r_01', isDuplicate: true }); // 重复不计
+    r.registerMany([{ animalId: 'r_02', isDuplicate: false }, { animalId: 'r_01', isDuplicate: false }]);
+    expect(r.owned().sort()).toEqual(['r_01', 'r_02']);
+  });
+
+  it('Cultivation.pet 仅涨好感度，不产生货币（ledger 不变）', () => {
+    const cult = new Cultivation({});
+    const ledger = new Ledger({ star: 100, diamond: 0, food: 50, shard: 0 });
+    const before = JSON.stringify(ledger.snapshot());
+    const res = cult.pet('r_01', { at: 1000000 });
+    expect(res.ok).toBe(true);
+    expect(res.gain).toBe(1);
+    expect(cult.affinityOf('r_01')).toBe(1);
+    expect(JSON.stringify(ledger.snapshot())).toBe(before); // 无货币产出
+  });
+
+  it('Cultivation.pet 冷却生效：冷却期内无效', () => {
+    const cult = new Cultivation({});
+    expect(cult.pet('r_01', { at: 1000 }).ok).toBe(true);
+    const r2 = cult.pet('r_01', { at: 1000 + 5000 }); // <30s 冷却
+    expect(r2.ok).toBe(false);
+    expect(r2.reason).toBe('COOLDOWN');
+  });
+});
+
+describe('Phase 2 · 餐厅双入口解锁按钮（决策② 双入口）', () => {
+  function restState(over) {
+    return baseState(Object.assign({
+      ledger: { star: 500, diamond: 0, food: 200, shard: 0 },
+      warehouse: { nextDish: { id: 'dish_3', costStar: 200, costFood: 40 } },
+    }, over));
+  }
+
+  it('可负担时下一道菜显示解锁按钮', () => {
+    const cmds = buildRestaurant(restState());
+    expect(cmds.some((c) => c.tag === 'button-label' && /解锁 dish_3/.test(c.text))).toBe(true);
+  });
+
+  it('不足时不显示解锁按钮', () => {
+    const cmds = buildRestaurant(restState({ ledger: { star: 0, diamond: 0, food: 0, shard: 0 } }));
+    expect(cmds.some((c) => c.tag === 'button-label' && /解锁/.test(c.text))).toBe(false);
+  });
+
+  it('命中解锁按钮返回 dishId；不破坏三区标牌', () => {
+    const b = getRestaurantUnlockButton(375, 667, restState());
+    expect(hitRestaurantUnlock(b.x + 5, b.y + 5, 375, 667, restState())).toBe('dish_3');
+    const cmds = buildRestaurant(restState());
+    expect(cmds.some((c) => c.tag === 'zone-label-welcome' && c.text === '迎宾区')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'zone-label-dining' && c.text === '就餐区')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'zone-label-kitchen' && c.text === '后厨区')).toBe(true);
   });
 });
 

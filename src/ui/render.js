@@ -22,7 +22,7 @@
  */
 
 // 集中锁参（纯 JS，零 wx；不变量纪律：概率/保底/成本只从此读，不硬编码）
-const { LOCKED } = require('../config/tunables');
+const { LOCKED, TUNED } = require('../config/tunables');
 
 // 稀有度色板（身份色由角色层决定，此处仅 UI 卡面/演出用稀有度色，与 ADR-4 分层一致）
 const RARITY_COLORS = {
@@ -193,12 +193,26 @@ function hitBackButton(x, y, w, h) {
 // ---------------------------------------------------------------------------
 
 /**
+ * HUB 区域解锁判定（Phase 2）。满足门槛后 locked:false, clickable:true。
+ * ctx = { dishUnlockedCount, rosterOwnedCount }；缺省（或门槛未达）则锁定。
+ */
+function evalHubUnlock(regionId, ctx) {
+  ctx = ctx || {};
+  switch (regionId) {
+    case SCENE.WAREHOUSE:    return (ctx.dishUnlockedCount || 0) >= TUNED.WAREHOUSE_UNLOCK_DISH_COUNT;
+    case SCENE.STAFF_LOUNGE: return (ctx.rosterOwnedCount || 0) >= TUNED.LOUNGE_UNLOCK_ROSTER_COUNT;
+    default:                 return true; // RESTAURANT / GACHA_MARKET 始终开放
+  }
+}
+
+/**
  * 中枢 4 区域几何（单一来源，命中检测共用）。
- * Phase 1：暖爪餐厅(RESTAURANT) / 动才市场(GACHA_MARKET) 可点；
- *          囤囤仓(WAREHOUSE) / 撸毛馆(STAFF_LOUNGE) 锁定不可点（🔒「即将开放」）。
+ * Phase 1：暖爪餐厅(RESTAURANT) / 动才市场(GACHA_MARKET) 始终可点；
+ *          Phase 2：囤囤仓(WAREHOUSE) / 撸毛馆(STAFF_LOUNGE) 按 evalHubUnlock 决定是否解锁。
+ * @param {object} [ctx] { dishUnlockedCount, rosterOwnedCount }（缺省 → WAREHOUSE/STAFF_LOUNGE 锁定）
  * @returns {Array<{id, x, y, w, h, label, locked, clickable}>}
  */
-function getHubRegions(w, h) {
+function getHubRegions(w, h, ctx) {
   const rw = Math.round(Math.min(170, (w - 3 * 24) / 2));
   const rh = Math.round(Math.min(210, (h - 56 - 90 - 24) / 2));
   const gap = 24;
@@ -207,18 +221,20 @@ function getHubRegions(w, h) {
   const rightX = leftX + rw + gap;
   const colTopY = topY;
   const colBotY = topY + rh + 24;
+  const unlockLounge = evalHubUnlock(SCENE.STAFF_LOUNGE, ctx);
+  const unlockWarehouse = evalHubUnlock(SCENE.WAREHOUSE, ctx);
   return [
-    { id: SCENE.STAFF_LOUNGE, x: leftX, y: colTopY, w: rw, h: rh, label: '撸毛馆', locked: true, clickable: false },
+    { id: SCENE.STAFF_LOUNGE, x: leftX, y: colTopY, w: rw, h: rh, label: '撸毛馆', locked: !unlockLounge, clickable: unlockLounge },
     { id: SCENE.GACHA_MARKET, x: rightX, y: colTopY, w: rw, h: rh, label: '动才市场', locked: false, clickable: true },
-    { id: SCENE.WAREHOUSE, x: leftX, y: colBotY, w: rw, h: rh, label: '囤囤仓', locked: true, clickable: false },
+    { id: SCENE.WAREHOUSE, x: leftX, y: colBotY, w: rw, h: rh, label: '囤囤仓', locked: !unlockWarehouse, clickable: unlockWarehouse },
     { id: SCENE.RESTAURANT, x: rightX, y: colBotY, w: rw, h: rh, label: '暖爪餐厅', locked: false, clickable: true },
   ];
 }
 
 /** 命中中枢区域：在 (x,y) 点中某「可点」区域返回其 id，否则 null（锁定区忽略）。 */
-function hitHubRegion(x, y, w, h) {
+function hitHubRegion(x, y, w, h, ctx) {
   if (typeof x !== 'number' || typeof y !== 'number') return null;
-  for (const reg of getHubRegions(w, h)) {
+  for (const reg of getHubRegions(w, h, ctx)) {
     if (!reg.clickable) continue;
     if (x >= reg.x && x <= reg.x + reg.w && y >= reg.y && y <= reg.y + reg.h) return reg.id;
   }
@@ -294,7 +310,7 @@ function buildHub(state) {
   cmds.push({ op: 'text', x: w / 2, y: 48, text: '🐾 动才村', color: '#5a3e2e', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'hub-title' });
 
   // 4 区域
-  const regions = getHubRegions(w, h);
+  const regions = getHubRegions(w, h, s.unlockCtx);
   for (const reg of regions) appendHubRegion(cmds, reg, s);
 
   // 新动物红点提示（可选）
@@ -391,6 +407,181 @@ function buildGachaMarket(state) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2 · 囤囤仓 WAREHOUSE / 撸毛馆 STAFF_LOUNGE / 图鉴 ROSTER
+// （fallback 实现：engineering-lead agent 空回，主理人 dirext 落盘，待复核签字）
+// 设计依据：design/gdd/system-scene-phase2.md（design-strategist 已先落盘）
+// 锁参 / 4 决策 / 双货币隔离全程遵守；撸毛仅好感度(C4)，仓库双入口(C1)。
+// 所有 build* 仍为纯函数 → 绘制指令数组；applyCommands 不变；roundRect 真机修复保留。
+// ---------------------------------------------------------------------------
+
+/** 仓库「解锁下一道菜」按钮；账本可负担才返回（避免误触）。 */
+function getWarehouseButtons(w, h, state) {
+  const s = state || {};
+  const wh = s.warehouse || {};
+  const next = wh.nextDish;
+  if (!next) return [];
+  const ledger = wh.ledger || {};
+  const star = ledger.star || 0;
+  const food = ledger.food || 0;
+  if (star >= next.costStar && food >= next.costFood) {
+    return [{ id: 'unlock_' + next.id, dishId: next.id, x: 14, y: 184, w: 200, h: 40, label: '解锁 ' + next.id }];
+  }
+  return [];
+}
+
+/** 命中仓库解锁按钮，返回 dishId | null。 */
+function hitWarehouseButton(x, y, w, h, state) {
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  for (const b of getWarehouseButtons(w, h, state)) {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.dishId;
+  }
+  return null;
+}
+
+/**
+ * 纯函数：囤囤仓只读快照 → 绘制指令数��。
+ * 聚合四货币 + 已解锁菜品 + 下一道可解锁（双入口：解锁入口调用既有 restaurant.unlockDish）。
+ */
+function buildWarehouse(state) {
+  const s = state || {};
+  const w = (s.canvas && s.canvas.w) || 375;
+  const h = (s.canvas && s.canvas.h) || 667;
+  const cmds = [];
+  cmds.push({ op: 'clear', color: '#0f1a18', w, h, tag: 'bg' });
+
+  // 回村（仓库可点 → scene='HUB'；复用既有热区）
+  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+
+  const wh = s.warehouse || {};
+  const ledger = wh.ledger || s.ledger || {};
+  const star = ledger.star || 0;
+  const diamond = ledger.diamond || 0;
+  const food = ledger.food || 0;
+  const shard = ledger.shard || 0;
+  cmds.push({ op: 'text', x: 14, y: 30, text: '★ ' + fmt(star) + '   💎 ' + fmt(diamond) + '   🍖 ' + fmt(food) + '   🔷 ' + fmt(shard), color: '#ffffff', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'hud' });
+  cmds.push({ op: 'text', x: w / 2, y: 54, text: '囤囤仓', color: '#B8E0CB', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-title' });
+
+  const dishes = wh.dishes || [];
+  const unlocked = dishes.filter((d) => d.unlocked);
+  cmds.push({ op: 'text', x: 14, y: 84, text: '已解锁 ' + unlocked.length + ' 道菜', color: '#CFE3EC', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-dish-count' });
+  unlocked.forEach((d, i) => {
+    cmds.push({ op: 'roundrect', x: 14 + i * 64, y: 100, w: 56, h: 30, r: 8, fill: '#2e4a40', stroke: '#B8E0CB', lineWidth: 1, tag: 'warehouse-dish-chip' });
+    cmds.push({ op: 'text', x: 14 + i * 64 + 28, y: 115, text: d.id, color: '#ffffff', font: '11px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-dish-label' });
+  });
+
+  const next = wh.nextDish;
+  if (next) {
+    cmds.push({ op: 'text', x: 14, y: 162, text: '下一道可解锁 ' + next.id + '：★' + next.costStar + ' 🍖' + next.costFood, color: '#FF9E68', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-next-cost' });
+    const btns = getWarehouseButtons(w, h, s);
+    if (btns.length) drawButton(cmds, btns[0], '#FF9E68', '#1a1a2e');
+    else cmds.push({ op: 'text', x: 14, y: 206, text: '星券 / 食材不足，先去餐厅经营攒资源', color: '#bbbbbb', font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-insufficient' });
+  }
+  return cmds;
+}
+
+/** 撸毛馆内「图鉴」入口按钮。 */
+function getLoungeButtons(w, h) {
+  return { roster: { id: 'roster', x: w - 12 - 110, y: 8, w: 110, h: 32, label: '图鉴' } };
+}
+
+/** 撸毛热区网格布局（已拥有动物每只一个圆形热区）。 */
+function loungeGrid(w, h) {
+  const cols = 4;
+  const gx = 20;
+  const gy = 96;
+  const cw = Math.floor((w - 2 * gx) / cols);
+  const ch = 92;
+  return { cols, gx, gy, cw, ch };
+}
+function getLoungePetSpots(state, w, h) {
+  const s = state || {};
+  const owned = (s.lounge && s.lounge.owned) || [];
+  const { cols, gx, gy, cw, ch } = loungeGrid(w, h);
+  return owned.map((o, i) => {
+    const cx = gx + (i % cols) * cw + cw / 2;
+    const cy = gy + Math.floor(i / cols) * ch;
+    return { id: o.id, x: cx, y: cy, r: 24 };
+  });
+}
+function hitLoungePet(x, y, w, h, state) {
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  for (const sp of getLoungePetSpots(state, w, h)) {
+    const dx = x - sp.x;
+    const dy = y - sp.y;
+    if (dx * dx + dy * dy <= sp.r * sp.r) return sp.id;
+  }
+  return null;
+}
+
+/**
+ * 纯函数：撸毛馆只读快照 → 绘制指令数组。
+ * 列出 roster.owned() 去重动物；点 critter → cultivation.pet（仅好感度 + 视觉，C4）。
+ */
+function buildLounge(state) {
+  const s = state || {};
+  const w = (s.canvas && s.canvas.w) || 375;
+  const h = (s.canvas && s.canvas.h) || 667;
+  const frame = s.frame || 0;
+  const cmds = [];
+  cmds.push({ op: 'clear', color: '#1a1410', w, h, tag: 'bg' });
+  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+  const rb = getLoungeButtons(w, h);
+  drawButton(cmds, rb.roster, '#7a5cff', '#ffffff');
+  cmds.push({ op: 'text', x: w / 2, y: 54, text: '撸毛馆', color: '#F3E2C7', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-title' });
+
+  const owned = (s.lounge && s.lounge.owned) || [];
+  if (!owned.length) {
+    cmds.push({ op: 'text', x: w / 2, y: Math.round(h / 2), text: '暂无拥有动物，去动才市场抽卡吧', color: '#bbbbbb', font: '14px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-empty' });
+    return cmds;
+  }
+  const { cols, gx, gy, cw, ch } = loungeGrid(w, h);
+  owned.forEach((o, i) => {
+    const cx = gx + (i % cols) * cw + cw / 2;
+    const cy = gy + Math.floor(i / cols) * ch;
+    appendCritter(cmds, { x: cx, y: cy, r: 20, fill: RARITY_COLORS[o.rarity] || '#888888', frame, phase: i, id: 'lounge-' + o.id });
+    cmds.push({ op: 'text', x: cx, y: cy + 32, text: o.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-critter-label' });
+    cmds.push({ op: 'text', x: cx, y: cy + 46, text: 'A ' + (o.affinity || 0) + '/100', color: '#FBE3A1', font: '11px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-affinity' });
+  });
+  return cmds;
+}
+
+/**
+ * 纯函数：图鉴只读快照 → 绘制指令数组（纯只读，无写操作）。
+ * 全量目录：已拥有显示完整 critter + 稀有度色条；🔒 显示同家族剪影 + ? 角标。
+ */
+function buildRoster(state) {
+  const s = state || {};
+  const w = (s.canvas && s.canvas.w) || 375;
+  const h = (s.canvas && s.canvas.h) || 667;
+  const frame = s.frame || 0;
+  const cmds = [];
+  cmds.push({ op: 'clear', color: '#14141f', w, h, tag: 'bg' });
+  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+  cmds.push({ op: 'text', x: w / 2, y: 54, text: '图鉴', color: '#ffffff', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-title' });
+
+  const view = (s.roster && s.roster.view) || [];
+  const cols = 4;
+  const gx = 20;
+  const gy = 96;
+  const cw = Math.floor((w - 2 * gx) / cols);
+  const ch = 96;
+  view.forEach((e, i) => {
+    const cx = gx + (i % cols) * cw + cw / 2;
+    const cy = gy + Math.floor(i / cols) * ch;
+    if (e.owned) {
+      appendCritter(cmds, { x: cx, y: cy, r: 18, fill: RARITY_COLORS[e.rarity] || '#888888', frame, phase: i, id: 'roster-' + e.id });
+      cmds.push({ op: 'roundrect', x: cx - 20, y: cy - 26, w: 40, h: 6, r: 3, fill: RARITY_COLORS[e.rarity] || '#888888', stroke: null, lineWidth: 0, tag: 'roster-rarity-bar' });
+      cmds.push({ op: 'text', x: cx, y: cy + 30, text: e.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-owned-label' });
+    } else {
+      // 🔒 未拥有：同家族部件形状剪影（去色）+ ? 角标（家族隔离 #2 仍适用）
+      appendCritter(cmds, { x: cx, y: cy, r: 18, fill: '#3a3a4a', frame, phase: i, id: 'roster-locked-' + e.id });
+      cmds.push({ op: 'text', x: cx, y: cy - 30, text: '?', color: '#777777', font: '18px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-locked-mark' });
+    }
+  });
+  return cmds;
+}
+
+// ---------------------------------------------------------------------------
 // 餐厅 RESTAURANT（主界面，由 E7 buildScene 升级；导出名 buildScene 保持兼容）
 // ---------------------------------------------------------------------------
 
@@ -448,6 +639,33 @@ function drawCustomerBubble(cmds, c, x, y, frame, i) {
     locked: !serviceable,
     id: c.id,
   });
+}
+
+/**
+ * 餐厅「解锁下一道菜」按钮（决策② 双入口：餐厅也作为菜品解锁入口）。
+ * 仅在账本可负担下一道菜成本时返回按钮（避免误触）；调用方触发 restaurant.unlockDish。
+ * 依赖 currentState() 注入的 warehouse.nextDish（见 game.js）。
+ */
+function getRestaurantUnlockButton(w, h, state) {
+  const s = state || {};
+  const next = s.warehouse && s.warehouse.nextDish;
+  if (!next) return null;
+  const ledger = s.ledger || {};
+  const star = ledger.star || 0;
+  const food = ledger.food || 0;
+  if (star >= next.costStar && food >= next.costFood) {
+    return { id: 'rest_unlock', dishId: next.id, x: Math.round(w / 2 - 80), y: h - 36, w: 160, h: 32, label: '解锁 ' + next.id };
+  }
+  return null;
+}
+
+/** 命中餐厅解锁按钮，返回 dishId | null。 */
+function hitRestaurantUnlock(x, y, w, h, state) {
+  const b = getRestaurantUnlockButton(w, h, state);
+  if (!b) return null;
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b.dishId;
+  return null;
 }
 
 /**
@@ -518,6 +736,10 @@ function buildRestaurant(state) {
   staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 2 * zoneH + zoneH - 28, frame, i, '厨'));
   cmds.push({ op: 'roundrect', x: zx + 20, y: top + 3 * zoneH - 44, w: 44, h: 24, r: 6, fill: '#4a4a4a', stroke: '#222222', lineWidth: 1, tag: 'pot' });
   cmds.push({ op: 'ellipse', x: zx + 42, y: top + 3 * zoneH - 48, rx: 12, ry: 16, fill: '#ff9f43', stroke: '#ffd166', lineWidth: 1, tag: 'flame' });
+
+  // 决策② 双入口：餐厅也可解锁下一道菜（与仓库共用 restaurant.unlockDish，原子扣 star+food）
+  const restUb = getRestaurantUnlockButton(w, h, s);
+  if (restUb) drawButton(cmds, restUb, '#FF9E68', '#1a1a2e');
 
   // 结算浮动数字（保留既有 tag 'float'）
   const floats = s.floats || [];
@@ -613,6 +835,9 @@ module.exports = {
   buildRestaurant,
   buildHub,
   buildGachaMarket,
+  buildWarehouse,
+  buildLounge,
+  buildRoster,
   applyCommands,
   getGachaButtons,
   hitGachaButton,
@@ -622,6 +847,13 @@ module.exports = {
   hitMarketButton,
   getTopBackButton,
   hitBackButton,
+  getWarehouseButtons,
+  hitWarehouseButton,
+  getLoungeButtons,
+  getLoungePetSpots,
+  hitLoungePet,
+  getRestaurantUnlockButton,
+  hitRestaurantUnlock,
   appendCritter,
   RARITY_COLORS,
   ROLE_COLORS,

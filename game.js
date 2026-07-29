@@ -27,13 +27,32 @@ const IN_WECHAT = typeof wx !== 'undefined';
 
 // —— 渲染层（纯函数 + 2d 指令落地，零引擎依赖）——
 const {
-  buildScene, buildHub, buildGachaMarket,
-  applyCommands, hitHubRegion, hitMarketButton, hitBackButton, SCENE,
+  buildScene, buildHub, buildGachaMarket, buildWarehouse, buildLounge, buildRoster,
+  applyCommands, hitHubRegion, hitMarketButton, hitBackButton, hitWarehouseButton,
+  hitLoungePet, getLoungeButtons, hitRestaurantUnlock, SCENE,
 } = require('./src/ui/render');
 // 注意：餐厅场景不再引用 hitGachaButton（抽卡按钮仅存于动才市场 GACHA_MARKET）
 
 // —— 锁参（纯 JS；pity 上限 / 新手窗口只从此读，不硬编码）——
 const { LOCKED } = require('./src/config/tunables');
+
+// —— Phase 2 模块（roster 图鉴 / cultivation 撸毛；agent 空回，主理人兜底落盘，待复核）——
+const { Roster } = require('./src/roster');
+const { Cultivation } = require('./src/cultivation');
+const { DEFAULT_ROSTER } = require('./src/gacha/index');
+
+// 全量动物目录（flat，供图鉴 🔒 剪影 + 撸毛馆稀有度着色）
+function flattenCatalog(rosterByRarity) {
+  const out = [];
+  for (const r of ['SSR', 'SR', 'R']) {
+    const bucket = (rosterByRarity && rosterByRarity[r]) || [];
+    for (const id of bucket) out.push({ id, rarity: r });
+  }
+  return out;
+}
+const CATALOG = flattenCatalog(DEFAULT_ROSTER);
+const CATALOG_MAP = {};
+CATALOG.forEach((e) => { CATALOG_MAP[e.id] = e.rarity; });
 
 // —— IAP 占位 / dev 调试发钻（受 flag 保护，默认关闭；保持双货币隔离：钻石不靠 idle 获得）——
 const DEV_IAP_GRANT = false; // 真实微信 IAP 需商户平台配置 + 后端，本期不做；dev 路径仅本地调试
@@ -83,6 +102,10 @@ function buildWorld(Mods) {
   // 抽卡引擎（共享 ledger；星券扣费经 E6 ledger 幂等，不回改既有不变量）
   const gacha = new GachaEngine({ ledger });
 
+  // Phase 2：图鉴注册表（去重拥有动物）+ 养成（撸毛仅好感度，不产货币）
+  const roster = new Roster({ gacha, catalog: CATALOG });
+  const cultivation = new Cultivation({});
+
   // 1 名演示顾客（rng=()=>0 确定取 dishPool[0]=dish_1，确保可服务）
   const customer = spawnCustomer(() => 0, ['dish_1', 'dish_2'], {
     id: 'cust_demo',
@@ -93,11 +116,37 @@ function buildWorld(Mods) {
     ledger,
     restaurant,
     gacha,
+    roster,
+    cultivation,
     customer,
     customers: [customer],
     unlockedPool: ['dish_1', 'dish_2'],
     custSeq: 1,
   };
+}
+
+/** 组装囤囤仓只读视图（四币 + 已解锁菜 + 下一道可解锁成本）。 */
+function buildWarehouseView(world) {
+  const ledger = world.ledger.snapshot();
+  const unlocked = world.restaurant.getUnlockedDishes();
+  const next = world.restaurant.dishes.nextCost();
+  const nextId = 'dish_' + (unlocked.length + 1);
+  return {
+    ledger,
+    dishes: unlocked.map((id) => ({ id, unlocked: true, costStar: 0, costFood: 0 })),
+    nextDish: { id: nextId, costStar: next.star, costFood: next.food },
+  };
+}
+
+/** 组装撸毛馆只读视图（去重拥有动物 + 好感度 / 羁绊阶层）。 */
+function buildLoungeView(world) {
+  const owned = world.roster.owned().map((id) => ({
+    id,
+    rarity: CATALOG_MAP[id] || 'R',
+    affinity: world.cultivation.affinityOf(id),
+    bondTier: world.cultivation.bondTier(id),
+  }));
+  return { owned };
 }
 
 function bootDemo(Mods) {
@@ -182,7 +231,11 @@ function runUi(world, canvas, ctx, Mods) {
       newbie: world.gacha.getPulls() < LOCKED.GACHA_NEWBIE_PULLS,
       navigation: nav,
       frame: frameCount,
-      rosterCount: 0,
+      unlockCtx: { dishUnlockedCount: unlocked.length, rosterOwnedCount: world.roster.count() },
+      warehouse: buildWarehouseView(world),
+      lounge: buildLoungeView(world),
+      roster: { view: world.roster.view() },
+      rosterCount: world.roster.count(),
     };
   }
 
@@ -213,6 +266,9 @@ function runUi(world, canvas, ctx, Mods) {
     // 按当前场景分发 build*（纯函数）→ applyCommands 落 2d 上下文
     const scene = nav.scene === SCENE.HUB ? buildHub(currentState())
       : nav.scene === SCENE.GACHA_MARKET ? buildGachaMarket(currentState())
+      : nav.scene === SCENE.WAREHOUSE ? buildWarehouse(currentState())
+      : nav.scene === SCENE.STAFF_LOUNGE ? buildLounge(currentState())
+      : nav.scene === SCENE.ROSTER ? buildRoster(currentState())
       : buildScene(currentState());
     applyCommands(ctx, scene);
   }
@@ -223,6 +279,7 @@ function runUi(world, canvas, ctx, Mods) {
     try {
       const r = world.gacha['draw' + (type === 'ten' ? 'Ten' : 'Single')]({ requestId: reqId, currency: 'star' });
       lastGacha = r;
+      if (r && r.ok && Array.isArray(r.draws)) world.roster.registerMany(r.draws); // 去重登记拥有动物
     } catch (err) {
       console.error('[bootshell] gacha error', err && err.message);
     }
@@ -259,15 +316,39 @@ function runUi(world, canvas, ctx, Mods) {
       const H = canvas.height;
 
       if (nav.scene === SCENE.HUB) {
-        const region = hitHubRegion(x, y, W, H);
-        // 锁定区（仓库/撸毛馆）hitHubRegion 返回 null → 忽略不可点
-        if (region === SCENE.RESTAURANT || region === SCENE.GACHA_MARKET) {
+        // 命中可点区域（解锁判定已内置于 hitHubRegion：锁定区返回 null）
+        const region = hitHubRegion(x, y, W, H, currentState().unlockCtx);
+        if (region) {
           nav.prev = nav.scene;
           nav.scene = region;
         }
-      } else if (nav.scene === SCENE.RESTAURANT) {
-        // 餐厅场景不含抽卡按钮（抽卡仅在动才市场）；只保留回村热区
+      } else if (nav.scene === SCENE.WAREHOUSE) {
         if (hitBackButton(x, y, W, H) === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
+        const dishId = hitWarehouseButton(x, y, W, H, currentState());
+        if (dishId) {
+          const reqId = 'ui-warehouse-unlock-' + dishId + '-' + Date.now();
+          world.restaurant.unlockDish(dishId, reqId); // 双入口：仓库解锁（原子扣 star+food）
+          return;
+        }
+      } else if (nav.scene === SCENE.STAFF_LOUNGE) {
+        if (hitBackButton(x, y, W, H) === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
+        const rb = getLoungeButtons(W, H).roster;
+        if (x >= rb.x && x <= rb.x + rb.w && y >= rb.y && y <= rb.y + rb.h) {
+          nav.prev = nav.scene; nav.scene = SCENE.ROSTER; return;
+        }
+        const petId = hitLoungePet(x, y, W, H, currentState());
+        if (petId) { world.cultivation.pet(petId, { at: Date.now() }); return; } // 仅好感度+视觉，无货币
+      } else if (nav.scene === SCENE.ROSTER) {
+        if (hitBackButton(x, y, W, H) === 'back') { nav.prev = nav.scene; nav.scene = SCENE.STAFF_LOUNGE; return; }
+      } else if (nav.scene === SCENE.RESTAURANT) {
+        // 餐厅场景不含抽卡按钮（抽卡仅在动才市场）；保留回村热区 + 双入口解锁
+        if (hitBackButton(x, y, W, H) === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
+        const dishId = hitRestaurantUnlock(x, y, W, H, currentState());
+        if (dishId) {
+          const reqId = 'ui-restaurant-unlock-' + dishId + '-' + Date.now();
+          world.restaurant.unlockDish(dishId, reqId); // 双入口：餐厅解锁
+          return;
+        }
       } else if (nav.scene === SCENE.GACHA_MARKET) {
         const hit = hitMarketButton(x, y, W, H);
         if (hit === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
