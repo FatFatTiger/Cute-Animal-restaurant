@@ -12,9 +12,18 @@
 
 const {
   buildScene,
+  buildHub,
+  buildGachaMarket,
   applyCommands,
   hitGachaButton,
   getGachaButtons,
+  getHubRegions,
+  hitHubRegion,
+  getMarketButtons,
+  hitMarketButton,
+  getTopBackButton,
+  hitBackButton,
+  SCENE,
   RARITY_COLORS,
 } = require('../../src/ui/render');
 const { createMockCanvas } = require('../helpers/mock-canvas');
@@ -143,3 +152,220 @@ describe('E7 抽卡按钮命中检测', () => {
     expect(hitGachaButton(undefined, undefined, 375, 667)).toBeNull();
   });
 });
+
+// —— Phase 1 多场景导航新增用例 ——
+
+function hubState(over) {
+  return Object.assign({
+    canvas: { w: 375, h: 667 },
+    ledger: { star: 120, diamond: 5, food: 30, shard: 2 },
+    navigation: { scene: SCENE.HUB, prev: null },
+    rosterCount: 0,
+    frame: 0,
+  }, over);
+}
+
+function marketState(over) {
+  return Object.assign({
+    canvas: { w: 375, h: 667 },
+    ledger: { star: 500, diamond: 0, food: 100, shard: 0 },
+    pity: 7,
+    pityMax: 50,
+    newbie: false,
+    lastGacha: null,
+    frame: 0,
+  }, over);
+}
+
+describe('Phase 1 · buildHub 中枢（4 区域 / 锁定区不可点）', () => {
+  it('返回指令含 clear + 标题 + 4 区域', () => {
+    const cmds = buildHub(hubState());
+    expect(Array.isArray(cmds)).toBe(true);
+    expect(cmds.some((c) => c.op === 'clear')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'hub-title')).toBe(true);
+    const regions = cmds.filter((c) => c.tag === 'hub-region');
+    expect(regions.length).toBe(4);
+  });
+
+  it('4 区域标识正确：暖爪餐厅/动才市场可点，囤囤仓/撸毛馆锁定', () => {
+    const regions = getHubRegions(375, 667);
+    const byId = {};
+    regions.forEach((r) => { byId[r.id] = r; });
+    expect(byId[SCENE.RESTAURANT].label).toBe('暖爪餐厅');
+    expect(byId[SCENE.GACHA_MARKET].label).toBe('动才市场');
+    expect(byId[SCENE.WAREHOUSE].label).toBe('囤囤仓');
+    expect(byId[SCENE.STAFF_LOUNGE].label).toBe('撸毛馆');
+    expect(byId[SCENE.RESTAURANT].clickable).toBe(true);
+    expect(byId[SCENE.GACHA_MARKET].clickable).toBe(true);
+    expect(byId[SCENE.WAREHOUSE].locked).toBe(true);
+    expect(byId[SCENE.STAFF_LOUNGE].locked).toBe(true);
+  });
+
+  it('锁定区渲染 🔒「即将开放」遮罩，可点区无锁定遮罩', () => {
+    const cmds = buildHub(hubState());
+    const lockedLabels = cmds.filter((c) => c.tag === 'hub-locked-label');
+    expect(lockedLabels.length).toBe(2);
+    expect(lockedLabels.every((c) => /即将开放/.test(c.text))).toBe(true);
+    // 可点区不应有锁定遮罩
+    const lockedIds = cmds.filter((c) => c.tag === 'hub-locked').map((c) => c.id);
+    expect(lockedIds).not.toContain(SCENE.RESTAURANT);
+    expect(lockedIds).not.toContain(SCENE.GACHA_MARKET);
+  });
+
+  it('HUD 只读四货币（★星券 💎钻石 🍖食材 🔷碎片）', () => {
+    const cmds = buildHub(hubState());
+    const hud = cmds.find((c) => c.tag === 'hud');
+    expect(hud.text).toContain('★ 120');
+    expect(hud.text).toContain('💎 5');
+    expect(hud.text).toContain('🍖 30');
+    expect(hud.text).toContain('🔷 2');
+  });
+
+  it('每区域门口有迎宾小动物（复用角色绘制库，critter 指令）', () => {
+    const cmds = buildHub(hubState());
+    const critters = cmds.filter((c) => c.tag === 'critter-body' && /^hub-/.test(c.id || ''));
+    expect(critters.length).toBe(4);
+  });
+});
+
+describe('Phase 1 · buildHub 命中检测 hitHubRegion', () => {
+  function centerOf(id) {
+    const r = getHubRegions(375, 667).find((x) => x.id === id);
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+  }
+  it('点中暖爪餐厅 → RESTAURANT', () => {
+    const p = centerOf(SCENE.RESTAURANT);
+    expect(hitHubRegion(p.x, p.y, 375, 667)).toBe(SCENE.RESTAURANT);
+  });
+  it('点中动才市场 → GACHA_MARKET', () => {
+    const p = centerOf(SCENE.GACHA_MARKET);
+    expect(hitHubRegion(p.x, p.y, 375, 667)).toBe(SCENE.GACHA_MARKET);
+  });
+  it('点中囤囤仓（锁定）→ null（不可点）', () => {
+    const p = centerOf(SCENE.WAREHOUSE);
+    expect(hitHubRegion(p.x, p.y, 375, 667)).toBeNull();
+  });
+  it('点中撸毛馆（锁定）→ null（不可点）', () => {
+    const p = centerOf(SCENE.STAFF_LOUNGE);
+    expect(hitHubRegion(p.x, p.y, 375, 667)).toBeNull();
+  });
+  it('点击空白区域 → null', () => {
+    expect(hitHubRegion(10, 10, 375, 667)).toBeNull();
+  });
+});
+
+describe('Phase 1 · buildGachaMarket 动才市场（保底 / 按钮 / IAP 占位）', () => {
+  it('返回指令含标题 + 保底 + IAP 占位面板 + 抽卡按钮', () => {
+    const cmds = buildGachaMarket(marketState());
+    expect(cmds.some((c) => c.tag === 'market-title')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'market-pity')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'market-iap-panel')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'market-iap-note')).toBe(true);
+    // 抽卡按钮（单抽/十连）存在
+    const ids = getMarketButtons(375, 667).map((b) => b.id);
+    expect(ids).toEqual(expect.arrayContaining(['single', 'ten']));
+  });
+
+  it('保底显示：距保底 X/50 + 软提示「再招 N 次必得 SR」', () => {
+    const cmds = buildGachaMarket(marketState({ pity: 7, pityMax: 50 }));
+    const pity = cmds.find((c) => c.tag === 'market-pity');
+    const hint = cmds.find((c) => c.tag === 'market-pity-hint');
+    expect(pity.text).toContain('7/50');
+    expect(hint.text).toContain('43'); // 50-7
+  });
+
+  it('IAP 占位按钮存在且文案标注占位（未实现真实支付）', () => {
+    const cmds = buildGachaMarket(marketState());
+    const note = cmds.find((c) => c.tag === 'market-iap-note');
+    expect(note.text).toContain('占位');
+    const ex = getMarketButtons(375, 667).find((b) => b.id === 'exchange');
+    expect(ex).toBeTruthy();
+    expect(ex.label).toContain('换钻');
+  });
+
+  it('上次抽卡结果渲染为稀有度色块', () => {
+    const cmds = buildGachaMarket(marketState({
+      lastGacha: { type: 'single', ok: true, draws: [{ animalId: 'sr_01', rarity: 'SR', isDuplicate: false, shardGain: 0 }], totalShard: 0 },
+    }));
+    const chip = cmds.find((c) => c.tag === 'rarity' && c.rarity === 'SR');
+    expect(chip).toBeTruthy();
+    expect(chip.fill).toBe(RARITY_COLORS.SR);
+  });
+
+  it('回村按钮存在于市场场景', () => {
+    const ex = getMarketButtons(375, 667).find((b) => b.id === 'back');
+    expect(ex).toBeTruthy();
+    expect(ex.label).toContain('回动才村');
+  });
+});
+
+describe('Phase 1 · buildGachaMarket 命中检测 hitMarketButton', () => {
+  function centerOf(id) {
+    const b = getMarketButtons(375, 667).find((x) => x.id === id);
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  }
+  it('点中单抽 → single', () => {
+    const p = centerOf('single');
+    expect(hitMarketButton(p.x, p.y, 375, 667)).toBe('single');
+  });
+  it('点中十连 → ten', () => {
+    const p = centerOf('ten');
+    expect(hitMarketButton(p.x, p.y, 375, 667)).toBe('ten');
+  });
+  it('点中换钻/礼包 → exchange', () => {
+    const p = centerOf('exchange');
+    expect(hitMarketButton(p.x, p.y, 375, 667)).toBe('exchange');
+  });
+  it('点中回村 → back', () => {
+    const p = centerOf('back');
+    expect(hitMarketButton(p.x, p.y, 375, 667)).toBe('back');
+  });
+  it('点击空白区域 → null', () => {
+    expect(hitMarketButton(200, 200, 375, 667)).toBeNull();
+  });
+});
+
+describe('Phase 1 · 回村按钮 hitBackButton（餐厅/市场通用）', () => {
+  it('命中顶部回村按钮返回 back', () => {
+    const b = getTopBackButton(375, 667);
+    expect(hitBackButton(b.x + 5, b.y + 5, 375, 667)).toBe('back');
+  });
+  it('空白处返回 null', () => {
+    expect(hitBackButton(200, 300, 375, 667)).toBeNull();
+  });
+});
+
+describe('Phase 1 · 角色保真（圆润 critter + 分层软阴影 + idle 动效）', () => {
+  it('buildScene 含圆润 roundrect + 分层软阴影 ellipse + critter 指令', () => {
+    const cmds = buildScene(baseState());
+    expect(cmds.some((c) => c.op === 'roundrect')).toBe(true);
+    expect(cmds.some((c) => c.op === 'ellipse' && c.tag === 'critter-shadow')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'critter-body')).toBe(true);
+    expect(cmds.some((c) => c.tag === 'critter-ear')).toBe(true);
+  });
+
+  it('帧计数驱动 idle 动效：不同 frame 同一 critter 的 y 位置不同', () => {
+    const a = buildScene(baseState({ frame: 0 })).find((c) => c.tag === 'critter-body');
+    const b = buildScene(baseState({ frame: 25 })).find((c) => c.tag === 'critter-body');
+    expect(a.y).not.toBe(b.y);
+  });
+
+  it('applyCommands 在 mock 上消费 ellipse/roundrect 不抛错并记录调用', () => {
+    const canvas = createMockCanvas(375, 667);
+    const ctx = canvas.getContext('2d');
+    const cmds = buildScene(baseState({ frame: 3 }));
+    expect(() => applyCommands(ctx, cmds)).not.toThrow();
+    expect(canvas._calls.some((c) => c.m === 'ellipse')).toBe(true);
+    expect(canvas._calls.some((c) => c.m === 'roundRect')).toBe(true);
+  });
+
+  it('buildHub 也使用 critter 保真（圆润 + 软阴影 + idle）', () => {
+    const a = buildHub(hubState({ frame: 0 }));
+    const b = buildHub(hubState({ frame: 25 }));
+    expect(a.some((c) => c.op === 'ellipse' && c.tag === 'critter-shadow')).toBe(true);
+    const bodyA = a.find((c) => c.tag === 'critter-body' && /^hub-/.test(c.id || ''));
+    const bodyB = b.find((c) => c.tag === 'critter-body' && /^hub-/.test(c.id || ''));
+    expect(bodyA.y).not.toBe(bodyB.y);
+  });
+});
+

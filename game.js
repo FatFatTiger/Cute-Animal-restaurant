@@ -11,6 +11,9 @@
  * `buildScene(state)`（纯函数，来自 src/ui/render.js）把 Restaurant / GachaEngine /
  * Ledger 的只读状态映射为绘制指令，再 `applyCommands(ctx, cmds)` 落到 2d 上下文；
  * `wx.onTouchStart` 监听抽卡按钮命中，点击触发 E3 抽卡并演出结果。
+ * Phase 1（sprint-5）：扩展为多场景导航 —— NavigationState(HUB/RESTAURANT/GACHA_MARKET)
+ * 按 scene 分发 buildHub / buildRestaurant / buildGachaMarket；触摸按场景路由（中枢区域 /
+ * 餐厅回村 / 市场单抽十连与换钻占位）。修订：2026-07-29 pivot to canvas2d（用户 OP1-A）。
  *
  * 纯逻辑层（src/ 的 E4/E11/E12 + E3）不重写、只被引用；UI 不持有游戏状态。
  *
@@ -23,7 +26,17 @@
 const IN_WECHAT = typeof wx !== 'undefined';
 
 // —— 渲染层（纯函数 + 2d 指令落地，零引擎依赖）——
-const { buildScene, applyCommands, hitGachaButton } = require('./src/ui/render');
+const {
+  buildScene, buildHub, buildGachaMarket,
+  applyCommands, hitGachaButton, hitHubRegion, hitMarketButton, hitBackButton, SCENE,
+} = require('./src/ui/render');
+
+// —— 锁参（纯 JS；pity 上限 / 新手窗口只从此读，不硬编码）——
+const { LOCKED } = require('./src/config/tunables');
+
+// —— IAP 占位 / dev 调试发钻（受 flag 保护，默认关闭；保持双货币隔离：钻石不靠 idle 获得）——
+const DEV_IAP_GRANT = false; // 真实微信 IAP 需商户平台配置 + 后端，本期不做；dev 路径仅本地调试
+const DEV_IAP_GRANT_AMOUNT = 60; // 单次 dev 发钻量（清晰标注，非 IAP 产出）
 
 // —— 全局错误捕获（真机静默卡 loading 时，把错误暴露出来）——
 if (IN_WECHAT && typeof wx.onError === 'function') {
@@ -115,8 +128,12 @@ function bootDemo(Mods) {
 
 /**
  * 真机渲染循环（仅 WeChat 分支调用；node 不进入）。
- * 每帧：推进餐厅服务 → 组装只读状态 → buildScene 出指令 → applyCommands 落 2d 上下文；
- * 触摸：命中抽卡按钮则触发 E3 抽卡，结果由 buildScene 演出。
+ * Phase 1 多场景导航：NavigationState(scene, prev) 驱动每帧按 scene 分发
+ * buildHub / buildRestaurant(buildScene) / buildGachaMarket；触摸按当前场景路由：
+ *   HUB      → hitHubRegion（仅 暖爪餐厅 / 动才市场 可点；仓库/撸毛馆锁定忽略）
+ *   RESTAURANT→ 回村按钮 + 既有单抽/十连（保留 E7）
+ *   GACHA_MARKET→ hitMarketButton（单抽/十连/换钻占位/回村）
+ * 经营循环仅在 RESTAURANT 推进（模块状态独立于 UI 存活，切场不丢收益）。
  */
 function runUi(world, canvas, ctx, Mods) {
   const { matchServiceable, spawnCustomer } = Mods.restaurant;
@@ -126,6 +143,10 @@ function runUi(world, canvas, ctx, Mods) {
 
   const floats = [];
   let lastGacha = null;
+
+  // —— Phase 1 导航状态机（首启着陆即中枢 HUB）——
+  const nav = { scene: SCENE.HUB, prev: null };
+  let frameCount = 0;
 
   function spawnNextCustomer() {
     const pool = world.unlockedPool;
@@ -156,50 +177,102 @@ function runUi(world, canvas, ctx, Mods) {
       floats,
       lastGacha,
       pity: world.gacha.getPity(),
+      pityMax: LOCKED.PITY_HARD,
+      newbie: world.gacha.getPulls() < LOCKED.GACHA_NEWBIE_PULLS,
+      navigation: nav,
+      frame: frameCount,
+      rosterCount: 0,
     };
   }
 
   function tick() {
-    const c = world.customers[0];
-    if (c) {
-      const reqId = 'live-serve-' + c.id + '-' + Date.now();
-      const res = world.restaurant.serve(c, 1.0, reqId);
-      if (res.serviceable && res.earned && res.earned.star > 0) {
-        floats.push({
-          x: Math.round(canvas.width / 2),
-          y: Math.round(canvas.height * 0.3),
-          text: '+' + res.earned.star.toFixed(2) + '★',
-          color: '#ffd166',
-          ttl: 60,
-        });
+    frameCount += 1;
+    // 经营循环仅在餐厅场景推进（切到市场/中枢时餐厅仍在后台累积，回餐厅即见最新收益）
+    if (nav.scene === SCENE.RESTAURANT) {
+      const c = world.customers[0];
+      if (c) {
+        const reqId = 'live-serve-' + c.id + '-' + Date.now();
+        const res = world.restaurant.serve(c, 1.0, reqId);
+        if (res.serviceable && res.earned && res.earned.star > 0) {
+          floats.push({
+            x: Math.round(canvas.width / 2),
+            y: Math.round(canvas.height * 0.3),
+            text: '+' + res.earned.star.toFixed(2) + '★',
+            color: '#ffd166',
+            ttl: 60,
+          });
+        }
+        spawnNextCustomer(); // 轮换顾客，保持可见可玩
       }
-      spawnNextCustomer(); // 轮换顾客，保持可见可玩
+      for (let i = floats.length - 1; i >= 0; i--) {
+        floats[i].ttl -= 1;
+        if (floats[i].ttl <= 0) floats.splice(i, 1);
+      }
     }
-    for (let i = floats.length - 1; i >= 0; i--) {
-      floats[i].ttl -= 1;
-      if (floats[i].ttl <= 0) floats.splice(i, 1);
-    }
-    const cmds = buildScene(currentState());
-    applyCommands(ctx, cmds);
+    // 按当前场景分发 build*（纯函数）→ applyCommands 落 2d 上下文
+    const scene = nav.scene === SCENE.HUB ? buildHub(currentState())
+      : nav.scene === SCENE.GACHA_MARKET ? buildGachaMarket(currentState())
+      : buildScene(currentState());
+    applyCommands(ctx, scene);
   }
 
-  // 触摸：抽卡按钮命中 → 触发 E3
+  // 触发一次抽卡（单抽/十连），结果由 build* 演出
+  function pull(type) {
+    const reqId = 'ui-pull-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+    try {
+      const r = world.gacha['draw' + (type === 'ten' ? 'Ten' : 'Single')]({ requestId: reqId, currency: 'star' });
+      lastGacha = r;
+    } catch (err) {
+      console.error('[bootshell] gacha error', err && err.message);
+    }
+  }
+
+  // 动才市场「换钻/礼包」：真实微信 IAP 需商户平台配置 + 后端，本期占位；
+  // 仅在 DEV_IAP_GRANT=true 时走 dev 发钻路径（清晰标注，非 IAP 产出，保持双货币隔离）。
+  function openIapPlaceholder() {
+    if (typeof wx === 'undefined') return;
+    if (DEV_IAP_GRANT) {
+      world.ledger.apply('dev-iap-grant-' + Date.now(), { diamond: DEV_IAP_GRANT_AMOUNT });
+      if (typeof wx.showModal === 'function') {
+        wx.showModal({ title: '[DEV] 钻石发放', content: '已发放 ' + DEV_IAP_GRANT_AMOUNT + ' 钻石（dev 调试路径，非微信 IAP 产出）', showCancel: false });
+      }
+      return;
+    }
+    if (typeof wx.showModal === 'function') {
+      wx.showModal({
+        title: '钻石充值（占位）',
+        content: '钻石充值需微信商户平台配置（商户号 / 支付后端），本期为占位，暂未接入真实支付。',
+        showCancel: false,
+      });
+    }
+  }
+
+  // 触摸：按当前场景路由
   if (typeof wx !== 'undefined' && typeof wx.onTouchStart === 'function') {
     wx.onTouchStart(function (e) {
       const t = e && e.touches && e.touches[0];
       if (!t) return;
       const x = t.x != null ? t.x : t.clientX;
       const y = t.y != null ? t.y : t.clientY;
-      const hit = hitGachaButton(x, y, canvas.width, canvas.height);
-      if (hit === 'single' || hit === 'ten') {
-        const type = hit === 'ten' ? 'ten' : 'single';
-        const reqId = 'ui-pull-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
-        try {
-          const r = world.gacha['draw' + (type === 'ten' ? 'Ten' : 'Single')]({ requestId: reqId, currency: 'star' });
-          lastGacha = r;
-        } catch (err) {
-          console.error('[bootshell] gacha error', err && err.message);
+      const W = canvas.width;
+      const H = canvas.height;
+
+      if (nav.scene === SCENE.HUB) {
+        const region = hitHubRegion(x, y, W, H);
+        // 锁定区（仓库/撸毛馆）hitHubRegion 返回 null → 忽略不可点
+        if (region === SCENE.RESTAURANT || region === SCENE.GACHA_MARKET) {
+          nav.prev = nav.scene;
+          nav.scene = region;
         }
+      } else if (nav.scene === SCENE.RESTAURANT) {
+        if (hitBackButton(x, y, W, H) === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
+        const hit = hitGachaButton(x, y, W, H); // 保留 E7：餐厅内也可单抽/十连
+        if (hit === 'single' || hit === 'ten') pull(hit);
+      } else if (nav.scene === SCENE.GACHA_MARKET) {
+        const hit = hitMarketButton(x, y, W, H);
+        if (hit === 'back') { nav.prev = nav.scene; nav.scene = SCENE.HUB; return; }
+        if (hit === 'single' || hit === 'ten') { pull(hit); return; }
+        if (hit === 'exchange') { openIapPlaceholder(); return; }
       }
     });
   }

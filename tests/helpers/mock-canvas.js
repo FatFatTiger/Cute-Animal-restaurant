@@ -26,6 +26,8 @@ function createMockCanvas(width, height) {
     stroke: rec('stroke'),
     moveTo: rec('moveTo'),
     lineTo: rec('lineTo'),
+    ellipse: rec('ellipse'),
+    roundRect: rec('roundRect'),
     save: rec('save'),
     restore: rec('restore'),
   };
@@ -48,6 +50,10 @@ function namedArgs(m, args) {
       return { text: args[0], x: args[1], y: args[2] };
     case 'arc':
       return { x: args[0], y: args[1], r: args[2] };
+    case 'ellipse':
+      return { x: args[0], y: args[1], rx: args[2], ry: args[3] };
+    case 'roundRect':
+      return { x: args[0], y: args[1], w: args[2], h: args[3] };
     case 'moveTo':
     case 'lineTo':
       return { x: args[0], y: args[1] };

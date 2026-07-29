@@ -3,6 +3,7 @@
 > 交接目的：让新专家团队**无缝衔接**当前进度。
 > 整理时间：2026-07-28（北京时间）
 > 整理人：主理人 游承峰（编排者）。本包含 Phase 0–4 全部产物 + 当前阻断项与下一步。
+> **修订：2026-07-29 pivot to canvas2d（用户 OP1-A）**：引擎由「Cocos Creator + 微信引擎插件」改为「微信原生 canvas2d（无 Cocos）」；资产由「位图 atlas」改为「程序化绘制函数库（零位图）」；着色器 tint 改为 canvas2d 分层 fill。详见 `docs/architecture/tech-prototype.md` ADR-1/ADR-2/ADR-4 与 §2/§4。不变量 #1（零位图）/#2（家族硬隔离）不变。
 
 ---
 
@@ -31,10 +32,10 @@
 
 **平台与技术**
 - 微信小游戏；主包硬上限 **≤4MB**；分包按需加载（餐厅场景 / 扩展图鉴 / 音频音乐 / 活动运营）。
-- 引擎 **Cocos Creator + 微信引擎插件**（运行时由微信客户端提供，不占 4MB 主包）。
-- 资产 **程序化拼装**：单一白模 base-parts atlas（头6/身5/耳8/尾6/肢3 + 面部/配件/12配色/6表情）+ 运行时 JSON 参数拼装；**单只动物 0 独立贴图、~11–64 字节**；新增动物贴图字节零增长。
+- 引擎 **微信原生 canvas2d（无 Cocos / 引擎插件）**（pivot 2026-07-29，用户 OP1-A；`wx.createCanvas().getContext('2d')`，零位图，不占 4MB 主包）。
+- 资产 **程序化图元绘制（零位图）**：一套程序化部件绘制函数库（canvas2d 矢量原语 + JSON 参数，头6/身5/耳8/尾6/肢3 + 面部/配件/12配色/6表情）；**单只动物 0 独立贴图、~11–64 字节**；新增动物贴图字节零增长（pivot 2026-07-29：原「base-parts atlas 位图」改为绘制函数库）。
 - **家族硬隔离**：跨家族部件组合运行时抛 `FamilyIsolationError`（universal / 显式多家族槽位白名单例外）。
-- 着色器 tint 分层上色：身份色（角色层）vs 稀有度色（UI 卡框层）分属不同 UI 层。
+- 分层 fill 上色（无 shader tint）：身份色（角色层）vs 稀有度色（UI 卡框层）分属不同绘制指令层（pivot 2026-07-29：原「着色器 tint」改为 canvas2d 分层 fill）。
 
 **产品参数**
 - 变现：混合 **IAP + IAA**。
@@ -60,7 +61,7 @@
 | `design/ux/spec.md` | UX 规格（☰Hub+底部4Tab、5屏线框、可访问性双编码） | ✅ v0.1（待补员工管理/菜品研发/顾客需求界面） |
 | `art/art-bible.md` | 美术圣经九节 + 程序化拼装生产清单 | ✅ v0.3 |
 | `art/asset-spec.md` | 资产规格（生产清单/Atlas打包/分层tint/分包/可访问性） | ✅ v0.1 |
-| `docs/architecture/tech-prototype.md` | 4MB 技术原型规格（五层架构/4 ADR/首包预算/V1–V7/R1–R7） | ✅ v0.1（逻辑层 PASS，构建/真机项待证伪） |
+| `docs/architecture/tech-prototype.md` | 4MB 技术原型规格（五层架构/4 ADR/首包预算/V1–V7/R1–R7） | ✅ v0.1（逻辑层 PASS，构建/真机项待证伪；2026-07-29 pivot to canvas2d） |
 | `production/epics.md` | 10 Epic 详述 + Top2 Epic Story 拆分 + Sprint1 候选 | ✅ v0.1 |
 | `production/sprint-1.md` | **首个冲刺计划（垂直切片）** | ✅ v0.1（主理人汇编） |
 | `tests/README.md` | 测试四分层 + 5 条关键不变量 + CI 体积门禁 | ✅ v0.1（脚手架） |
@@ -74,8 +75,8 @@
 
 ## 4. 已验证的事实（可信结论，无需重做）
 
-- **4MB 资产风险已证伪（逻辑层）**：`assembly-demo.js` 实跑——atlas 字节 `delta=0`、单只参数 ≈11B、跨家族组合正确抛 `FamilyIsolationError`。✅
-- **首包预算 ≈1.3–1.9MB**（引擎插件 0MB 由微信提供 + 核心框架 ~0.3–0.5MB + 引导白模 atlas ~0.8–1.2MB + 配置/字体）。✅ 但有**构建证伪**缺口（见 §7）。
+- **4MB 资产风险已证伪（逻辑层）**：`assembly-demo.js` 实跑——参数注册表字节 `delta=0`（pivot 2026-07-29：原「atlas」= 程序化参数注册表，零位图）、单只参数 ≈11B、跨家族组合正确抛 `FamilyIsolationError`。✅
+- **首包预算 ≈0.4–0.9MB（零位图后）**（无引擎插件 + 核心框架 ~0.3–0.5MB + 引导程序化绘制库参数 ≈0 + 配置/字体）。pivot 2026-07-29 由 Cocos+atlas 改为微信原生 canvas2d + 零位图，预算显著下降。✅ 但有**构建证伪**缺口（见 §7，以 `tests/smoke/build-size.gate.js` 实测为准）。
 - **经济自洽（模拟）**：星券为放置+抽卡单值源；bond +30% ≪ 单分支升级 +140%（无主导策略）；离线 3× 在线但 4h×20% 封顶。✅
 - **早期偏慷慨**：纯抽卡 ~0.9 周达 50 保底 → 已下调 `offline_factor 0.25→0.20` 放缓。🟡
 
@@ -115,7 +116,7 @@
 
 ## 7. 已知风险与残留证伪项
 
-- 🔴 **构建/真机证伪仍为最大未消项**：`tech-prototype.md` 的 V4（主包<4MB）、V5（tint 分层）、V6（引擎插件加载）、V7（分包命中）及 R1–R7（帧率/冷启/分包耗时/广告/IAP/内存）目前仅逻辑层+预算估算。**必须真实 Cocos 分包构建 + 微信真机**才能证伪。Sprint 1 的 CI 体积门禁是第一步。
+- 🔴 **构建/真机证伪仍为最大未消项**：`tech-prototype.md` 的 V4（主包<4MB）、V5（canvas2d 分层 fill）、V6（微信原生 canvas2d 渲染就绪）、V7（分包命中）及 R1–R7（帧率/冷启/分包耗时/广告/IAP/内存）目前仅逻辑层+预算估算。**必须真实构建 + 微信真机**才能证伪（pivot 2026-07-29：非 Cocos 构建）。Sprint 1 的 CI 体积门禁是第一步。
 - 🟡 **atlas 烘焙常量待替换**：`assembly-demo.js` 的 `ATLAS_BYTES` 为占位，E2-S5 须以真实烘焙图集替换并复核首包 0.8–1.2MB 行（标记为 R-ATLAS-CONST）。
 - 🟡 **数值为初版常数**：曲线常数（含 `offline_factor`）待 v1.0 前数值平衡 pass 校准；结构不动只调数。
 
