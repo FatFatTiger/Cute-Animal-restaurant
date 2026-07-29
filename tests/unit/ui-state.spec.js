@@ -369,3 +369,111 @@ describe('Phase 1 · 角色保真（圆润 critter + 分层软阴影 + idle 动�
   });
 });
 
+// —— roundRect 严格真机回归（WeChat macOS WebKit lib 3.17.0：radii 必须 sequence）——
+// 根因：旧实现把 radii 作为单个 number 传入 ctx.roundRect，在 strict sequence 实现的真机抛
+// "cannot be converted to a sequence"，每帧 tick → runUi 顶层 catch 连刷。修复后一律传 4 元素数组。
+// 本组用例构造「严格真机 ctx」：roundRect 在第 5 参非 Array 时抛错，模拟真机解析。
+
+function createStrictRectCtx() {
+  const roundRectCalls = [];
+  const noop = () => {};
+  const ctx = {
+    fillStyle: '#000000',
+    strokeStyle: '#000000',
+    font: '',
+    textAlign: 'left',
+    textBaseline: 'top',
+    lineWidth: 1,
+    beginPath: noop,
+    closePath: noop,
+    fill: noop,
+    stroke: noop,
+    fillRect: noop,
+    strokeRect: noop,
+    moveTo: noop,
+    lineTo: noop,
+    arc: noop,
+    ellipse: noop,
+    fillText: noop,
+    save: noop,
+    restore: noop,
+  };
+  // 严格实现：radii 必须是 sequence（Array），否则抛错 —— 模拟 WeChat macOS WebKit 3.17.0
+  ctx.roundRect = function (x, y, w, h, radii) {
+    if (!(radii instanceof Array)) {
+      throw new Error('radii must be sequence');
+    }
+    roundRectCalls.push({ x, y, w, h, radii });
+  };
+  ctx._roundRectCalls = roundRectCalls;
+  return ctx;
+}
+
+describe('roundRect 严格真机回归（WeChat macOS WebKit 3.17.0，radii 必须 sequence）', () => {
+  it('roundrect 指令以 4 元素数组 radii 落 roundRect，严格 ctx 不抛', () => {
+    const ctx = createStrictRectCtx();
+    expect(() =>
+      applyCommands(ctx, [{ op: 'roundrect', x: 10, y: 10, w: 100, h: 50, r: 8, fill: '#fff' }])
+    ).not.toThrow();
+    expect(ctx._roundRectCalls.length).toBe(1);
+    const call = ctx._roundRectCalls[0];
+    expect(Array.isArray(call.radii)).toBe(true);
+    expect(call.radii.length).toBeGreaterThanOrEqual(1);
+    expect(call.radii[0]).toBe(8);
+  });
+
+  it('r: undefined / r: NaN 兜底为 8，严格 ctx 不抛且 radii 全为 8', () => {
+    const ctxU = createStrictRectCtx();
+    expect(() =>
+      applyCommands(ctxU, [{ op: 'roundrect', x: 0, y: 0, w: 40, h: 20, fill: '#0f0' }])
+    ).not.toThrow();
+    const ctxN = createStrictRectCtx();
+    expect(() =>
+      applyCommands(ctxN, [{ op: 'roundrect', x: 0, y: 0, w: 40, h: 20, r: NaN, fill: '#0f0' }])
+    ).not.toThrow();
+    expect(Array.isArray(ctxU._roundRectCalls[0].radii)).toBe(true);
+    expect(ctxU._roundRectCalls[0].radii.every((v) => v === 8)).toBe(true);
+    expect(ctxN._roundRectCalls[0].radii.every((v) => v === 8)).toBe(true);
+  });
+
+  it('不合法 x/y/w/h（NaN/undefined/字符串）兜底为 0，严格 ctx 不抛', () => {
+    const ctx = createStrictRectCtx();
+    expect(() =>
+      applyCommands(ctx, [{ op: 'roundrect', x: NaN, y: undefined, w: NaN, h: 'bad', r: 5, stroke: '#ff0' }])
+    ).not.toThrow();
+    const call = ctx._roundRectCalls[0];
+    expect(call.x).toBe(0);
+    expect(call.y).toBe(0);
+    expect(call.w).toBe(0);
+    expect(call.h).toBe(0);
+    expect(call.radii.every((v) => v === 5)).toBe(true);
+  });
+
+  it('真实场景样本指令全部含合法 radii 数组：无 roundrect cmd 让严格 ctx 抛异常', () => {
+    const ctx = createStrictRectCtx();
+    const samples = [
+      buildScene(baseState({ frame: 7 })),
+      buildHub(hubState()),
+      buildGachaMarket(marketState()),
+    ];
+    expect(() => {
+      samples.forEach((cmds) => applyCommands(ctx, cmds));
+    }).not.toThrow();
+    // 所有被调用的 roundRect 其 radii 均为 Array（核心回归断言）
+    expect(ctx._roundRectCalls.length).toBeGreaterThan(0);
+    expect(
+      ctx._roundRectCalls.every((c) => Array.isArray(c.radii) && c.radii.length >= 1)
+    ).toBe(true);
+  });
+
+  it('mock-canvas 录制器记录 radii（args[4]），便于回归断言它是数组', () => {
+    const canvas = createMockCanvas(375, 667);
+    const ctx = canvas.getContext('2d');
+    applyCommands(ctx, [{ op: 'roundrect', x: 5, y: 5, w: 50, h: 30, r: 12, fill: '#abc' }]);
+    const rec = canvas._calls.find((c) => c.m === 'roundRect');
+    expect(rec).toBeTruthy();
+    expect(Array.isArray(rec.radii)).toBe(true);
+    expect(rec.radii[0]).toBe(12);
+  });
+});
+

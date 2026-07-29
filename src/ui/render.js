@@ -517,15 +517,31 @@ function applyCommands(ctx, cmds) {
       if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(c.x, c.y, c.w, c.h); }
       if (c.stroke) { ctx.strokeStyle = c.stroke; ctx.lineWidth = c.lineWidth || 1; ctx.strokeRect(c.x, c.y, c.w, c.h); }
     } else if (c.op === 'roundrect') {
-      if (typeof ctx.roundRect === 'function') {
-        ctx.beginPath();
-        ctx.roundRect(c.x, c.y, c.w, c.h, c.r || 8);
-        if (c.fill) { ctx.fillStyle = c.fill; ctx.fill(); }
-        if (c.stroke) { ctx.strokeStyle = c.stroke; ctx.lineWidth = c.lineWidth || 1; ctx.stroke(); }
-      } else {
-        // 退化：旧环境无 roundRect → 方角兜底（视觉降级，不崩）
-        if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(c.x, c.y, c.w, c.h); }
-        if (c.stroke) { ctx.strokeStyle = c.stroke; ctx.lineWidth = c.lineWidth || 1; ctx.strokeRect(c.x, c.y, c.w, c.h); }
+      // 兜底：所有几何参数必须是合法 number，防止 emitter 端漏算/NaN 污染真机序列解析
+      const x = Number.isFinite(c.x) ? c.x : 0;
+      const y = Number.isFinite(c.y) ? c.y : 0;
+      const w = Number.isFinite(c.w) ? c.w : 0;
+      const h = Number.isFinite(c.h) ? c.h : 0;
+      const r = Number.isFinite(c.r) ? c.r : 8;
+      // radii 一律传 4 元素数组字面量：标准 sequence 形式在合规实现（含严格 WeChat macOS WebKit）都接受
+      try {
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, [r, r, r, r]);
+          if (c.fill) { ctx.fillStyle = c.fill; ctx.fill(); }
+          if (c.stroke) { ctx.strokeStyle = c.stroke; ctx.lineWidth = c.lineWidth || 1; ctx.stroke(); }
+        } else {
+          // 旧环境兜底：方角（无 roundRect 的退化路径）
+          if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(x, y, w, h); }
+          if (c.stroke) { ctx.strokeStyle = c.stroke; ctx.lineWidth = c.lineWidth || 1; ctx.strokeRect(x, y, w, h); }
+        }
+      } catch (_) {
+        // 单条绘制指令失败绝不上抛：降级为方角 rect，防止污染 runUi 顶层 catch 连刷屏
+        // 默认静默降级（项目既定「不崩」哲学）。调试版可在此恢复日志，但不要在 catch 再抛。
+        try {
+          if (c.fill) { ctx.fillStyle = c.fill; ctx.fillRect(x, y, w, h); }
+          if (c.stroke) { ctx.strokeStyle = c.stroke; ctx.lineWidth = c.lineWidth || 1; ctx.strokeRect(x, y, w, h); }
+        } catch (__) { /* swallow */ }
       }
     } else if (c.op === 'circle') {
       ctx.beginPath();

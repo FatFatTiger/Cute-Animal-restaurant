@@ -53,7 +53,7 @@ function namedArgs(m, args) {
     case 'ellipse':
       return { x: args[0], y: args[1], rx: args[2], ry: args[3] };
     case 'roundRect':
-      return { x: args[0], y: args[1], w: args[2], h: args[3] };
+      return { x: args[0], y: args[1], w: args[2], h: args[3], radii: args[4] };
     case 'moveTo':
     case 'lineTo':
       return { x: args[0], y: args[1] };
