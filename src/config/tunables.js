@@ -59,14 +59,34 @@ const TUNED = {
 const LOCKED = {
   OFFLINE_FACTOR: 0.20, // 离线效率为在线 20%（锁参红线，平衡 pass v0.2 落盘）
   T_CAP_INIT: 14400, // 离线累积上限 初始 4h，可扩至 12h
-  // 抽卡锁参（仅引用，本 Sprint 不实现抽卡逻辑）
+  // —— 抽卡锁参（E3 已执行；全部只读 LOCKED，不硬编码）——
+  // 概率表（system-gacha §3.1，锁参红线：R60/SR30/SSR10、N=0% 不入池）
   GACHA_R: 0.60,
   GACHA_SR: 0.30,
   GACHA_SSR: 0.10,
   GACHA_N: 0.0,
+  // 保底（§3.2）：pity∈[0,50] 每次+1，SSR 获取归零，跨货币共享
   PITY_HARD: 50,
+  // 软保底阶梯：SSR_rate(c)=min(1, GACHA_SSR + SSR_SOFT_STEP×(c−SSR_SOFT_OFFSET))，c∈[SSR_SOFT_START, SSR_SOFT_END]
+  //   c=41→≈19% / c=45→≈55% / c=49→≈91% / c=50→硬保底 100%（SSR_SOFT_BASE 复用 GACHA_SSR）
+  SSR_SOFT_START: 41,
+  SSR_SOFT_END: 49,
+  SSR_SOFT_STEP: 0.09,
+  SSR_SOFT_OFFSET: 40,
+  // 十连 9 折保底 ≥1SR（§3 / §4）
   TEN_PULL_SR_GUARANTEE: true,
+  // 抽卡成本（§2：单抽 100 / 十连 900=9折；星券免费、钻石付费，共用同一池与 pity）
+  GACHA_COST_SINGLE_STAR: 100,
+  GACHA_COST_SINGLE_DIAMOND: 100,
+  GACHA_COST_TEN_STAR: 900,
+  GACHA_COST_TEN_DIAMOND: 900,
+  // 重复转碎片（§3.3）：R20 / SR50 / SSR100（升星阈值与满星溢出回收后置 E5，本 Sprint 不做）
+  GACHA_SHARD_R: 20,
+  GACHA_SHARD_SR: 50,
+  GACHA_SHARD_SSR: 100,
+  // 新手前 10 抽保底 ≥1SR（§3.2 / §4）
   NEWBIE_FIRST10_SR: true,
+  GACHA_NEWBIE_PULLS: 10,
 };
 
 module.exports = { TUNED, LOCKED };
