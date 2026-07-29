@@ -108,6 +108,23 @@ function offlineAccumulated(Ieff, T_off, opts) {
   return Ieff * offlineFactor * eff;
 }
 
+/**
+ * 由可注入时钟派生离线时长并结算（Sprint2 工程化·C1 防回拨）。
+ * 离线时长一律以服务端权威时钟为准：T_off = max(0, clock.now() − lastSeenMs)/1000，
+ * 本地时钟回拨（now < lastSeen）夹到 0，杜绝负离线收益（GDD §4/§5 防回拨验收项）。
+ * 锁参（offline_factor / T_cap）仍经 LOCKED，未触碰红线；不变量 5 语义不变。
+ *
+ * @param {number} Ieff       在线收益率
+ * @param {object} clock      可注入时钟（tests/helpers/clock.js），提供 now()（毫秒）
+ * @param {number} lastSeenMs 上次结算的服务端时间戳（毫秒）
+ * @param {object} [opts]     { offlineFactor, T_cap }
+ */
+function offlineFromClock(Ieff, clock, lastSeenMs, opts) {
+  const deltaMs = (clock.now() - lastSeenMs) || 0;
+  const T_off = Math.max(0, deltaMs) / 1000; // 防回拨：负值夹到 0
+  return offlineAccumulated(Ieff, T_off, opts);
+}
+
 module.exports = {
   recipeMult,
   stationMult,
@@ -117,6 +134,7 @@ module.exports = {
   effectiveSeats,
   computeIeff,
   offlineAccumulated,
+  offlineFromClock,
   TUNED,
   LOCKED,
 };

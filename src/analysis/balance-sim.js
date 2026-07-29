@@ -1,18 +1,22 @@
-// 数值平衡模拟（编排者代执行，待 design-strategist 复核）
+// 数值平衡模拟（Sprint2 工程化·C4：改由 config/tunables 单一来源取参，消除重复与调参漂移风险）
 // 有界、单次、无递归。仅做算术推演，输出平衡报告所需数字。
+// 锁参红线（OFFLINE_FACTOR / T_CAP_INIT）来自 LOCKED；tunable 曲线来自 TUNED。
+// 注：本文件为离线分析脚本，非运行时模块；调参时须与 src/config/tunables.js 保持同步。
 'use strict';
 
-const Y_BASE = 0.04;          // 星券/秒/座
-const OFFLINE_FACTOR = 0.20;  // 离线效率（锁参，R-BAL-4 已按 0.20 重跑；原 0.25 已废弃）
-const T_CAP_SEC = 4 * 3600;   // 离线累积上限 4h
-const ACTIVE_SEC = 20 * 60;   // 每日活跃 20min
-const OFFLINE_SEC = 8 * 3600; // 每日离线 8h（受 T_CAP 截断）
+const { TUNED, LOCKED } = require('../config/tunables');
 
-function recipeMult(lv){ return 1 + 0.10 * (lv - 1); }
-function stationMult(lv){ return 1 + 0.10 * (lv - 1); }
-function bondMult(nBond){ return 1 + Math.min(0.30, 0.03 * nBond); } // 上限 +30%
-function seatCost(n){ return 200 * Math.pow(1.5, n); }   // C = 4 + n
-function branchCost(n){ return 150 * Math.pow(1.4, n); } // recipe/station lv = 1 + n
+const Y_BASE = TUNED.Y_BASE;                  // 星券/秒/座
+const OFFLINE_FACTOR = LOCKED.OFFLINE_FACTOR; // 离线效率（锁参，R-BAL-4 已按 0.20 重跑；原 0.25 已废弃）
+const T_CAP_SEC = LOCKED.T_CAP_INIT;          // 离线累积上限 4h
+const ACTIVE_SEC = 20 * 60;                   // 每日活跃 20min（分析脚本常量，非运行时）
+const OFFLINE_SEC = 8 * 3600;                 // 每日离线 8h（受 T_CAP 截断）
+
+function recipeMult(lv){ return 1 + TUNED.RECIPE_PER_LEVEL * (lv - 1); }
+function stationMult(lv){ return 1 + TUNED.STATION_PER_LEVEL * (lv - 1); }
+function bondMult(nBond){ return 1 + Math.min(TUNED.BOND_IDLE_CAP, TUNED.BOND_IDLE_PER_ANIMAL * nBond); } // 上限 +30%
+function seatCost(n){ return TUNED.SEAT_COST_BASE * Math.pow(TUNED.SEAT_COST_RATE, n); }   // C = 4 + n
+function branchCost(n){ return TUNED.BRANCH_COST_BASE * Math.pow(TUNED.BRANCH_COST_RATE, n); } // recipe/station lv = 1 + n
 
 function ieff(C, rLv, sLv, nBond){
   return C * Y_BASE * recipeMult(rLv) * stationMult(sLv) * bondMult(nBond) * 1; // ad_mult=1

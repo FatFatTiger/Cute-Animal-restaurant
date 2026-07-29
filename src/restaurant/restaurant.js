@@ -82,13 +82,17 @@ class Restaurant {
     const starGain = Ieff * dt;
     const foodGain = this.config.foodRate * dt;
     const res = this.ledger.apply(requestId, { star: starGain, food: foodGain });
+    // Sprint2 工程化·C1 幂等返回修正：仅当「成功且非重复 requestId」才计为已入账；
+    // 重复 requestId（res.dup）虽底层 ok=true（缓存首次结果），但本次未实际结算，
+    // 故 earned/ledgerOk 归零，避免生产层向调用方谎报二次产出。账本余额本身已唯一（ledger 幂等）。
+    const applied = res.ok && !res.dup;
     return {
       serviceable: true,
       unlocked: true,
       staffed: true,
       Ieff,
-      earned: res.ok ? { star: starGain, food: foodGain } : { star: 0, food: 0 },
-      ledgerOk: res.ok,
+      earned: applied ? { star: starGain, food: foodGain } : { star: 0, food: 0 },
+      ledgerOk: applied,
       dup: res.dup,
     };
   }

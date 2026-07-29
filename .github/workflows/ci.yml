@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: logic tests (T1 + T2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm test   # jest tests/unit + tests/integration（零真机/引擎依赖，秒级反馈）
+
+  size-gate:
+    name: main-package size gate (T3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: node tests/smoke/build-size.gate.js   # 读 project.config.json packOptions.ignore，断言主包 < 4MB（ADR-3）

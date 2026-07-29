@@ -46,6 +46,13 @@ const TUNED = {
   BOND_IDLE_PER_ANIMAL: 0.03, // 家人级且上岗 +3%/只
   BOND_IDLE_CAP: 0.30, // 上限 +30%
   BOND_IDLE_COUNT_CAP: 10, // 仅前 10 只上岗计
+
+  // —— 升级成本曲线（system-idle-restaurant §3.1 / epics E4，tunable）——
+  // 座位 seats = 200×1.5^n；工位/菜谱 stations/recipes = 150×1.4^n（n = 升级序号 0-based）。
+  SEAT_COST_BASE: 200,
+  SEAT_COST_RATE: 1.5,
+  BRANCH_COST_BASE: 150,
+  BRANCH_COST_RATE: 1.4,
 };
 
 // 锁参红线（绝不可动）：见任务书与 GDD 复核签字（文策渊 2026-07-28）。
