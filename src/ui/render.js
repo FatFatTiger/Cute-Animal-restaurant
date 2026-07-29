@@ -587,8 +587,9 @@ function buildRoster(state) {
 
 /**
  * 纯函数：餐厅只读快照 → 绘制指令数组。升级了角色保真（圆润 critter + 软阴影 + idle）。
- * 保留原 buildScene 的全部 tag（bg/hud/restaurant/seat/staff-label/demand/demand-text/float/rarity/rarity-text）
+ * 保留原 buildScene 的 tag（bg/hud/restaurant/seat/staff-label/demand/demand-text/float）
  * 以保证既有单测不破；新增 critter-* 系列指令。
+ * Option B 修订：餐厅场景 100% 无抽卡痕迹——不渲染 lastGacha 被动结果、不含 rarity/rarity-text tag（抽卡演出仅在 buildGachaMarket）。
  */
 // ---------------------------------------------------------------------------
 // 餐厅区域小 helper（三岗员工 / 顾客落座 / 顾客排队；复用 appendCritter + 需求气泡样式）
@@ -679,8 +680,8 @@ function hitRestaurantUnlock(x, y, w, h, state) {
  * 顾客确定性分流：前 seats 个顾客 = 落座（就餐区座位上），其余 = 排队（迎宾区）。
  * 不随机、不改 I_eff 计算。员工按 role 分区域（chef→后厨 / waiter→就餐 / host→迎宾）。
  *
- * 纪律：餐厅场景**不含抽卡按钮**（抽卡仅在动才市场）；保留回村热区、HUD、I_eff/ledger
- * 只读展示、结算浮动数字、以及 lastGacha 被动结果演出（非按钮，保留既有 rarity 单测）。
+ * 纪律：餐厅场景**不含抽卡按钮且不含抽卡结果**（抽卡仅在动才市场，包括按钮与结果演出）；保留回村热区、HUD、I_eff/ledger
+ * 只读展示与结算浮动数字。lastGacha 在餐厅被忽略，不进入 cmds。
  */
 function buildRestaurant(state) {
   const s = state || {};
@@ -747,11 +748,8 @@ function buildRestaurant(state) {
     cmds.push({ op: 'text', x: f.x, y: f.y, text: f.text, color: f.color || '#ffd166', font: '16px sans-serif', align: 'center', baseline: 'middle', tag: 'float' });
   });
 
-  // 抽卡结果演出（被动展示，非按钮；保留既有 tag 'rarity'/'rarity-text'，既有单测不破）
-  const lg = s.lastGacha;
-  if (lg && lg.draws && lg.draws.length) {
-    appendGachaResult(cmds, lg, h - 96);
-  }
+  // 餐厅场景 100% 无抽卡痕迹（Option B 修订）：lastGacha 仅在动才市场渲染。
+  // appendGachaResult 仍保留供 buildGachaMarket 调用。
 
   return cmds;
 }

@@ -102,12 +102,13 @@ describe('E7 buildScene 纯函数（不依赖 canvas）', () => {
     expect(f.text).toContain('0.54');
   });
 
-  it('抽卡结果：稀有度色块（SSR=金色）+ 动物名（按 RARITY_COLORS）', () => {
-    const cmds = buildScene(
-      baseState({
-        lastGacha: { type: 'single', ok: true, draws: [{ animalId: 'ssr_01', rarity: 'SSR', isDuplicate: false, shardGain: 0 }], totalShard: 0 },
-      })
-    );
+  it('抽卡结果：稀有度色块（SSR=金色）+ 动物名（仅动才市场；Option B 修订——餐厅不再渲染）', () => {
+    const cmds = buildGachaMarket({
+      canvas: { w: 375, h: 667 },
+      ledger: { star: 100, food: 20 },
+      pity: 0,
+      lastGacha: { type: 'single', ok: true, draws: [{ animalId: 'ssr_01', rarity: 'SSR', isDuplicate: false, shardGain: 0 }], totalShard: 0 },
+    });
     const chip = cmds.find((c) => c.tag === 'rarity' && c.rarity === 'SSR');
     expect(chip).toBeTruthy();
     expect(chip.fill).toBe(RARITY_COLORS.SSR);
@@ -131,18 +132,21 @@ describe('E7 buildScene 纯函数（不依赖 canvas）', () => {
 });
 
 describe('E7 applyCommands（mock canvas，零真机依赖）', () => {
-  it('在 mock 2d ctx 上消费指令不抛错，并记录 draw 调用', () => {
+  it('在 mock 2d ctx 上消费指令不抛错（Option B：餐厅即便 lastGacha 存在也不渲染抽卡结果）', () => {
     const canvas = createMockCanvas(375, 667);
     const ctx = canvas.getContext('2d');
     const cmds = buildScene(
       baseState({
-        lastGacha: { type: 'single', ok: true, draws: [{ animalId: 'r_01', rarity: 'R', isDuplicate: true, shardGain: 20 }], totalShard: 20 },
+        lastGacha: { type: 'ten', ok: true, draws: [{ animalId: 'sr_01', rarity: 'SR', isDuplicate: false, shardGain: 0 }], totalShard: 0 },
       })
     );
     expect(() => applyCommands(ctx, cmds)).not.toThrow();
     expect(canvas._calls.some((c) => c.m === 'fillRect')).toBe(true);
     expect(canvas._calls.some((c) => c.m === 'fillText')).toBe(true);
-    expect(canvas._calls.some((c) => c.m === 'arc')).toBe(true);
+    // Option B 正面断言：餐厅 cmds 不含任何抽卡痕迹 tag
+    expect(cmds.some((c) => c.tag === 'rarity')).toBe(false);
+    expect(cmds.some((c) => c.tag === 'rarity-text')).toBe(false);
+    expect(cmds.some((c) => c.tag === 'gacha-result-label')).toBe(false);
   });
 
   it('ctx 为空时安全返回不抛', () => {
