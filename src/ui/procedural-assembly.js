@@ -370,7 +370,8 @@ function assembleCritter(specObj, opts) {
   const headY = cy - r * 0.55;
   drawHead(out, Object.assign({}, base, { headY, headIdx: p.head || 0 }));
   drawEars(out, Object.assign({}, base, { headY, earIdx: p.ear || 0 }));
-  const expr = EXPRESSIONS[specObj.expressionId] || EXPRESSIONS[0];
+  let expr = EXPRESSIONS[specObj.expressionId] || EXPRESSIONS[0];
+  if (opts.blink) expr = Object.assign({}, expr, { blink: true }); // B4 周期眨眼覆盖（不依赖固定表情，无全局状态）
   drawFace(out, { cx, headY, r, eyeColor, id, expr });
   if (specObj.accessory != null && specObj.accessory >= 0) {
     drawAccessory(out, Object.assign({}, base, { headY, accIdx: specObj.accessory }));

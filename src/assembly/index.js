@@ -1,6 +1,7 @@
 'use strict';
 
 // DEPRECATED: OP1-A pivot — legacy bitmap atlas + shader-tint pipeline, superseded by canvas2d procedural; not referenced by src/ui/render.js
+//   → 活跃替代模块：src/ui/procedural-assembly.js（B1+B2 落地：零贴图指令 / 12 身份配色 / 家族硬隔离 / assembleCritter）
 
 /**
  * 拼装工程化模块（Sprint2 工程化）

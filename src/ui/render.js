@@ -85,6 +85,10 @@ const PA = require('./procedural-assembly');
 
 const BG = THEME.BG;
 
+// B4 ♿ reduce-motion：全局开关（默认 false，保持 159 测试基线）；state.reduceMotion 可逐场景覆盖
+let REDUCE_MOTION = false;
+function setReduceMotion(v) { REDUCE_MOTION = !!v; }
+
 /** 场景 id 常量（导航状态机与命中检测共用）。 */
 const SCENE = {
   HUB: 'HUB',
@@ -113,9 +117,14 @@ function fmt(n) {
 function appendCritter(cmds, o) {
   // 兼容旧调用（HUB/餐厅员工/顾客）：未给视觉 spec 时默认哺乳动物占位（部件全 0，合法且通过家族隔离）
   const spec = o.spec || { family: 'mammal', parts: { head: 0, body: 0, ear: 0, tail: 0, limb: 0 } };
+  const reduce = !!(o.reduceMotion || REDUCE_MOTION);
+  // B4 周期眨眼：确定性（frame + phase 派生），无全局可变状态；reduce-motion 时关闭
+  const blink = !reduce && (((o.frame || 0) + (o.phase || 0) * 17) % 220 < 8);
   const opts = {
     x: o.x, y: o.y, r: o.r,
-    frame: o.frame, phase: o.phase, bob: o.bob,
+    frame: o.frame, phase: o.phase,
+    bob: reduce ? 0 : o.bob,
+    blink,
     id: o.id,
     label: o.label, labelColor: o.labelColor,
     eyeColor: o.eyeColor, stroke: o.stroke,
@@ -276,6 +285,9 @@ function appendHubRegion(cmds, reg, state) {
   // 小屋暖光窗（两扇圆角暖色窗，纯装饰；区域几何/命中不变，hub-region/hub-locked 等 tag 不受影响）
   cmds.push({ op: 'roundrect', x: reg.x + reg.w * 0.16, y: reg.y + 64, w: reg.w * 0.26, h: 22, r: 6, fill: '#FFE9B0', stroke: THEME.WOOD, lineWidth: 1, tag: 'hub-window', id: reg.id });
   cmds.push({ op: 'roundrect', x: reg.x + reg.w * 0.58, y: reg.y + 64, w: reg.w * 0.26, h: 22, r: 6, fill: '#FFE9B0', stroke: THEME.WOOD, lineWidth: 1, tag: 'hub-window', id: reg.id });
+  // B4 伪造天光：窗口暖光晕（堆叠半透明 ellipse，无 gradient）
+  cmds.push({ op: 'ellipse', x: reg.x + reg.w * 0.29, y: reg.y + 75, rx: reg.w * 0.14, ry: 14, fill: 'rgba(255,233,176,0.22)', tag: 'hub-window-glow', id: reg.id });
+  cmds.push({ op: 'ellipse', x: reg.x + reg.w * 0.71, y: reg.y + 75, rx: reg.w * 0.14, ry: 14, fill: 'rgba(255,233,176,0.22)', tag: 'hub-window-glow', id: reg.id });
   // 迎宾小动物（门口装饰，复用角色绘制库；idle 相位按区域错开）
   const critterX = reg.x + reg.w / 2;
   const critterY = reg.y + reg.h * 0.42;
@@ -602,6 +614,7 @@ function buildLounge(state) {
   const w = (s.canvas && s.canvas.w) || 375;
   const h = (s.canvas && s.canvas.h) || 667;
   const frame = s.frame || 0;
+  const reduce = !!(s.reduceMotion || REDUCE_MOTION);
   const cmds = [];
   cmds.push({ op: 'clear', color: THEME.LOUNGE_BG, w, h, tag: 'bg' });
   drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
@@ -611,7 +624,9 @@ function buildLounge(state) {
 
   // 奶茶暖调陈设（纯装饰，非 critter 热区）：窗（伪造天光）+ 猫爬架
   cmds.push({ op: 'roundrect', x: w - 92, y: 70, w: 76, h: 54, r: 10, fill: '#BFE0E8', stroke: THEME.WOOD, lineWidth: 3, tag: 'lounge-window' });
-  cmds.push({ op: 'ellipse', x: w - 54, y: 92, rx: 30, ry: 18, fill: 'rgba(255,255,255,0.35)', tag: 'lounge-window-glow' });
+  const lumPulse = reduce ? 0 : 0.06 * Math.sin(frame * 0.03); // B4 呼吸脉冲（reduce-motion 关）
+  cmds.push({ op: 'ellipse', x: w - 54, y: 92, rx: 42, ry: 28, fill: 'rgba(255,255,255,0.18)', tag: 'lounge-window-glow' });
+  cmds.push({ op: 'ellipse', x: w - 54, y: 92, rx: 30, ry: 18, fill: 'rgba(255,255,255,' + (0.35 + lumPulse).toFixed(3) + ')', tag: 'lounge-window-glow' });
   cmds.push({ op: 'roundrect', x: w - 92, y: 70, w: 76, h: 54, r: 10, fill: null, stroke: THEME.WOOD, lineWidth: 1, tag: 'lounge-window' });
   cmds.push({ op: 'roundrect', x: 16, y: 96, w: 14, h: 150, r: 6, fill: THEME.WOOD, stroke: null, lineWidth: 0, tag: 'lounge-cattree' });
   cmds.push({ op: 'ellipse', x: 23, y: 104, rx: 26, ry: 10, fill: THEME.SOFA, stroke: THEME.ROOF_DK, lineWidth: 1, tag: 'lounge-cattree' });
@@ -632,7 +647,7 @@ function buildLounge(state) {
     cmds.push({ op: 'ellipse', x: cx, y: cy + 26, rx: 22, ry: 9, fill: THEME.SOFA, tag: 'lounge-cushion' });
     // 角色本体用 12 身份配色（resolveCritterSpec → COLOR_PRESETS），绝不稀有度色
     const spec = PA.resolveCritterSpec(o.id);
-    appendCritter(cmds, { x: cx, y: cy, r: 20, frame, phase: i, id: 'lounge-' + o.id, spec });
+    appendCritter(cmds, { x: cx, y: cy, r: 20, frame, phase: i, id: 'lounge-' + o.id, spec, reduceMotion: reduce });
     cmds.push({ op: 'text', x: cx, y: cy + 32, text: o.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-critter-label' });
     cmds.push({ op: 'text', x: cx, y: cy + 46, text: 'A ' + (o.affinity || 0) + '/100', color: '#FBE3A1', font: '11px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-affinity' });
   });
@@ -648,6 +663,7 @@ function buildRoster(state) {
   const w = (s.canvas && s.canvas.w) || 375;
   const h = (s.canvas && s.canvas.h) || 667;
   const frame = s.frame || 0;
+  const reduce = !!(s.reduceMotion || REDUCE_MOTION);
   const cmds = [];
   cmds.push({ op: 'clear', color: '#14141f', w, h, tag: 'bg' });
   drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
@@ -668,14 +684,16 @@ function buildRoster(state) {
     if (e.owned) {
       // 分层 fill 修正（R3）：角色本体用 12 身份配色（绝不稀有度色）；稀有度色仅留 UI 卡框条（下条）。
       const spec = PA.resolveCritterSpec(e.id);
-      appendCritter(cmds, { x: cx, y: cy, r: 18, frame, phase: i, id: 'roster-' + e.id, spec });
+      appendCritter(cmds, { x: cx, y: cy, r: 18, frame, phase: i, id: 'roster-' + e.id, spec, reduceMotion: reduce });
       // 稀有度色仅出现在 UI 卡框层（roster-rarity-bar / 抽卡 chip），与角色层物理分离，无 shader tint。
       cmds.push({ op: 'roundrect', x: cx - 20, y: cy - 26, w: 40, h: 6, r: 3, fill: RARITY_COLORS[e.rarity] || '#888888', stroke: null, lineWidth: 0, tag: 'roster-rarity-bar' });
+      // B4 ♿ 双编码：稀有度附加字母（非颜色线索），与色条并存，降低色觉障碍辨识门槛
+      cmds.push({ op: 'text', x: cx - 24, y: cy - 23, text: e.rarity, color: '#ffffff', font: '9px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-rarity-text' });
       cmds.push({ op: 'text', x: cx, y: cy + 30, text: e.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-owned-label' });
     } else {
       // 🔒 未拥有：同家族部件形状剪影（单色去色）+ ? 角标（家族隔离 #2 仍适用，assembleCritter 已校验）
       const spec = PA.resolveCritterSpec(e.id);
-      appendCritter(cmds, { x: cx, y: cy, r: 18, frame, phase: i, id: 'roster-locked-' + e.id, spec, locked: true });
+      appendCritter(cmds, { x: cx, y: cy, r: 18, frame, phase: i, id: 'roster-locked-' + e.id, spec, locked: true, reduceMotion: reduce });
       cmds.push({ op: 'text', x: cx, y: cy - 30, text: '?', color: '#777777', font: '18px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-locked-mark' });
     }
   });
@@ -700,13 +718,14 @@ function buildRoster(state) {
  * 三岗员工：圆润 critter + 身份色(ROLE_COLORS) + 岗位小标（如「厨」/「服」/「迎」）
  *         + 角色标签 + 等级。保留既有 tag 'staff-label' 以保证既有单测不破。
  */
-function drawZoneStaff(cmds, st, x, y, frame, i, tag, accessory) {
-  appendCritter(cmds, { x, y, r: 14, fill: ROLE_COLORS[st.role] || '#888888', frame, phase: i * 2, id: 'staff-' + (st.id || i), accessory });
+function drawZoneStaff(cmds, st, x, y, frame, i, tag, accessory, reduce) {
+  appendCritter(cmds, { x, y, r: 14, fill: ROLE_COLORS[st.role] || '#888888', frame, phase: i * 2, id: 'staff-' + (st.id || i), accessory, reduceMotion: reduce });
+  const roleIcon = { chef: '🍳', waiter: '🍽️', host: '🏠' }[st.role] || '•';
   cmds.push({
     op: 'text',
     x,
     y: y + 22,
-    text: tag + (ROLE_LABEL[st.role] || st.role) + ' L' + (st.level || 1),
+    text: roleIcon + ' ' + tag + (ROLE_LABEL[st.role] || st.role) + ' L' + (st.level || 1),
     color: '#ffffff',
     font: '12px sans-serif',
     align: 'center',
@@ -721,9 +740,9 @@ function drawZoneStaff(cmds, st, x, y, frame, i, tag, accessory) {
  * 复用既有 demand / demand-text tag + locked 标记，既有单测不破。
  * @param {boolean} seated 仅用于注释语义；落座与排队使用同一气泡样式，仅坐标不同（调用侧决定）。
  */
-function drawCustomerBubble(cmds, c, x, y, frame, i, spec) {
+function drawCustomerBubble(cmds, c, x, y, frame, i, spec, reduce) {
   const serviceable = !!c.serviceable;
-  const opts = { x, y, r: 18, frame, phase: i * 3 + 1, id: 'cust-' + (c.id || i) };
+  const opts = { x, y, r: 18, frame, phase: i * 3 + 1, id: 'cust-' + (c.id || i), reduceMotion: reduce };
   if (spec) opts.spec = spec;                       // 就餐落座顾客用真实 spec（身份色，见 §4.1）
   else opts.fill = serviceable ? '#5bc0eb' : '#6b6b8f'; // 迎宾排队沿用岗位固定色
   appendCritter(cmds, opts);
@@ -792,6 +811,7 @@ function buildRestaurant(state) {
   const w = (s.canvas && s.canvas.w) || 375;
   const h = (s.canvas && s.canvas.h) || 667;
   const frame = s.frame || 0;
+  const reduce = !!(s.reduceMotion || REDUCE_MOTION);
   const cmds = [];
 
   cmds.push({ op: 'clear', color: BG, w, h, tag: 'bg' });
@@ -823,7 +843,8 @@ function buildRestaurant(state) {
   // —— 1) 迎宾区（暖木框 + 迎宾牌 + host 接待 + 排队顾客）——
   // 暖木框 + 暖棕室内填色（cozy 暖调，非占位紫）；保留 zone-welcome / zone-label-welcome tag
   cmds.push({ op: 'roundrect', x: zx, y: top, w: zw, h: zoneH, r: 14, fill: '#4a3826', stroke: THEME.WOOD, lineWidth: 2, tag: 'zone-welcome' });
-  cmds.push({ op: 'text', x: zx + 12, y: top + 18, text: '迎宾区', color: '#F3E2C7', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-welcome' });
+  cmds.push({ op: 'text', x: zx + 12, y: top + 18, text: '🏠', color: '#F3E2C7', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-icon-welcome' });
+  cmds.push({ op: 'text', x: zx + 34, y: top + 18, text: '迎宾区', color: '#F3E2C7', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-welcome' });
   // 迎宾牌（暖木小招牌 + 🏠 图标 + 迎宾文字，纯装饰，无抽卡痕迹）
   cmds.push({ op: 'roundrect', x: zx + zw - 56, y: top + 10, w: 46, h: 26, r: 8, fill: THEME.PANEL, stroke: THEME.WOOD, lineWidth: 2, tag: 'welcome-sign' });
   cmds.push({ op: 'text', x: zx + zw - 33, y: top + 23, text: '🏠', color: '#5A4A42', font: '14px sans-serif', align: 'center', baseline: 'middle', tag: 'welcome-sign-icon' });
@@ -831,20 +852,28 @@ function buildRestaurant(state) {
   // 门口暖木迎宾地垫（圆角 PATH 色，纯装饰，非热区）
   cmds.push({ op: 'roundrect', x: zx + 14, y: top + zoneH - 12, w: 64, h: 8, r: 4, fill: THEME.PATH, stroke: null, lineWidth: 0, tag: 'welcome-mat' });
   // host（familyToJob→接待）立于门口，带迎宾牌配件（accessory 装饰，非稀有度色）
-  staff.filter((st) => st.role === 'host').forEach((st, i) => drawZoneStaff(cmds, st, zx + 24 + i * 54, top + zoneH - 30, frame, i, '迎', 0));
+  staff.filter((st) => st.role === 'host').forEach((st, i) => drawZoneStaff(cmds, st, zx + 24 + i * 54, top + zoneH - 30, frame, i, '迎', 0, reduce));
   // 排队顾客需求气泡（保留 drawCustomerBubble / demand / demand-text tag）
-  customers.slice(seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 24 + i * 60, top + zoneH - 30, frame, i));
+  customers.slice(seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 24 + i * 60, top + zoneH - 30, frame, i, null, reduce));
 
   // —— 2) 就餐区（餐桌 + 坐垫 + 落座顾客真实 spec + waiter + 暖吊灯伪造光晕）——
   cmds.push({ op: 'roundrect', x: zx, y: top + zoneH, w: zw, h: zoneH, r: 14, fill: '#2e4636', stroke: THEME.GRASS, lineWidth: 2, tag: 'zone-dining' });
-  cmds.push({ op: 'text', x: zx + 12, y: top + zoneH + 18, text: '就餐区', color: '#A9D8A0', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-dining' });
-  // 暖吊灯（circle + 3 层半透明 ellipse 伪造光晕；无 gradient op，堆叠 ellipse 代替）
+  cmds.push({ op: 'text', x: zx + 12, y: top + zoneH + 18, text: '🍽️', color: '#A9D8A0', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-icon-dining' });
+  cmds.push({ op: 'text', x: zx + 34, y: top + zoneH + 18, text: '就餐区', color: '#A9D8A0', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-dining' });
+  // 暖吊灯（circle + 多层半透明 ellipse 伪造光晕；无 gradient op，堆叠 ellipse 代替；B4 增强外圈 + 呼吸脉冲）
   const lampX = zx + zw / 2;
   const lampY = top + zoneH + 16;
   cmds.push({ op: 'circle', x: lampX, y: lampY, r: 4, fill: THEME.LAMP, tag: 'lamp' });
-  cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: 40, ry: 30, fill: 'rgba(255,233,176,0.07)', tag: 'lamp-glow' });
-  cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: 28, ry: 21, fill: 'rgba(255,233,176,0.12)', tag: 'lamp-glow' });
-  cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: 16, ry: 12, fill: 'rgba(255,233,176,0.22)', tag: 'lamp-glow' });
+  const pulse = reduce ? 0 : 0.05 * Math.sin(frame * 0.04); // B4 呼吸脉冲（reduce-motion 关）
+  const glowLayers = [
+    { rx: 54, ry: 42, a: 0.04 },
+    { rx: 40, ry: 30, a: 0.07 },
+    { rx: 28, ry: 21, a: 0.12 },
+    { rx: 16, ry: 12, a: 0.22 + pulse },
+  ];
+  for (const gl of glowLayers) {
+    cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: gl.rx, ry: gl.ry, fill: 'rgba(255,233,176,' + gl.a.toFixed(3) + ')', tag: 'lamp-glow' });
+  }
   for (let i = 0; i < seats; i++) {
     const sx = zx + 16 + i * seatStep + 14;
     const sy = top + zoneH + 34 + 14;
@@ -856,13 +885,14 @@ function buildRestaurant(state) {
     cmds.push({ op: 'ellipse', x: sx, y: sy + 8, rx: 20, ry: 8, fill: THEME.GRASS, tag: 'seat-cushion', index: i });
   }
   // 落座顾客（真实 spec → 12 身份配色，绝不用稀有度色）
-  customers.slice(0, seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 16 + i * seatStep + 14, top + zoneH + 34 + 14, frame, i, PA.resolveCritterSpec(c.id)));
-  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + 2 * zoneH - 28, frame, i, '服'));
+  customers.slice(0, seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 16 + i * seatStep + 14, top + zoneH + 34 + 14, frame, i, PA.resolveCritterSpec(c.id), reduce));
+  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + 2 * zoneH - 28, frame, i, '服', reduce));
 
   // —— 3) 后厨区（chef + 锅/火苗 + 货架网格）——
   cmds.push({ op: 'roundrect', x: zx, y: top + 2 * zoneH, w: zw, h: zoneH, r: 14, fill: '#46352a', stroke: THEME.WOOD, lineWidth: 2, tag: 'zone-kitchen' });
-  cmds.push({ op: 'text', x: zx + 12, y: top + 2 * zoneH + 18, text: '后厨区', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-kitchen' });
-  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 3 * zoneH - 30, frame, i, '厨'));
+  cmds.push({ op: 'text', x: zx + 12, y: top + 2 * zoneH + 18, text: '🍳', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-icon-kitchen' });
+  cmds.push({ op: 'text', x: zx + 34, y: top + 2 * zoneH + 18, text: '后厨区', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-kitchen' });
+  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 3 * zoneH - 30, frame, i, '厨', reduce));
   // 锅（保留 pot tag roundrect）
   cmds.push({ op: 'roundrect', x: zx + 20, y: top + 3 * zoneH - 44, w: 44, h: 24, r: 6, fill: '#4a4a4a', stroke: '#222222', lineWidth: 1, tag: 'pot' });
   // 火苗（保留 flame tag ellipse）
@@ -1038,6 +1068,7 @@ module.exports = {
   getRestaurantUnlockButton,
   hitRestaurantUnlock,
   appendCritter,
+  setReduceMotion,
   RARITY_COLORS,
   ROLE_COLORS,
   ROLE_LABEL,
