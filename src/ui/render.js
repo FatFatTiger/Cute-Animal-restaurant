@@ -65,6 +65,10 @@ const ROLE_LABEL = {
   host: 'Host',
 };
 
+// 真实程序化角色拼装（ENG-ASSET-B1B2）：部件库 / 12 身份配色 / 家族隔离 / assembleCritter。
+// 仅产绘制指令数组，零 wx / canvas；render 的 critter 绘制统一走它，稀有度色只留 UI 卡框层。
+const PA = require('./procedural-assembly');
+
 const BG = THEME.BG;
 
 /** 场景 id 常量（导航状态机与命中检测共用）。 */
@@ -85,53 +89,29 @@ function fmt(n) {
 // ---------------------------------------------------------------------------
 
 /**
- * 把一只程序化小动物（圆润躯干 + 双耳 + 双眸 + 软阴影 + 轻 idle 呼吸）追加进 cmds。
- * @param {Array} cmds        指令数组（就地 push）
- * @param {object} o {x,y,r,fill,frame,phase,bob,label,labelColor,eyeColor,id,stroke}
+ * 把一只程序化小动物（真实部件拼装 + 软阴影 + idle 呼吸）追加进 cmds。
+ * 统一走 PA.assembleCritter（procedural-assembly.js）：角色本体 fill = 12 身份配色（或
+ * fillOverride 岗位/顾客固定色 / locked 单色剪影），**绝不**把稀有度色涂到角色本体。
+ * @param {Array} cmds 指令数组（就地 push）
+ * @param {object} o {x,y,r,fill(→fillOverride),frame,phase,bob,label,labelColor,eyeColor,
+ *                     id,stroke, spec(→CritterSpec), colorPresetId, locked, accessory}
  */
 function appendCritter(cmds, o) {
-  const frame = o.frame || 0;
-  const phase = o.phase || 0;
-  const bob = Math.sin((frame + phase) * 0.06) * (o.bob != null ? o.bob : 1.6);
-  const r = o.r || 18;
-  const cx = o.x;
-  const cy = o.y + bob;
-
-  // 分层软阴影（贴地半透明暖灰椭圆；禁硬投影）
-  cmds.push({
-    op: 'ellipse',
-    x: cx,
-    y: o.y + r * 0.95,
-    rx: r * 0.92,
-    ry: r * 0.32,
-    fill: 'rgba(0,0,0,0.16)',
-    tag: 'critter-shadow',
+  // 兼容旧调用（HUB/餐厅员工/顾客）：未给视觉 spec 时默认哺乳动物占位（部件全 0，合法且通过家族隔离）
+  const spec = o.spec || { family: 'mammal', parts: { head: 0, body: 0, ear: 0, tail: 0, limb: 0 } };
+  const opts = {
+    x: o.x, y: o.y, r: o.r,
+    frame: o.frame, phase: o.phase, bob: o.bob,
     id: o.id,
-  });
-  // 双耳（圆润小圆）
-  cmds.push({ op: 'circle', x: cx - r * 0.5, y: cy - r * 0.72, r: r * 0.34, fill: o.fill, stroke: o.stroke || '#00000022', lineWidth: 1, tag: 'critter-ear', id: o.id });
-  cmds.push({ op: 'circle', x: cx + r * 0.5, y: cy - r * 0.72, r: r * 0.34, fill: o.fill, stroke: o.stroke || '#00000022', lineWidth: 1, tag: 'critter-ear', id: o.id });
-  // 圆润躯干（roundRect 软糯外形）
-  cmds.push({ op: 'roundrect', x: cx - r, y: cy - r * 0.5, w: r * 2, h: r * 1.45, r: r * 0.7, fill: o.fill, stroke: o.stroke || '#00000022', lineWidth: 1, tag: 'critter-body', id: o.id });
-  // 双眸
-  const eye = o.eyeColor || '#2e2e4a';
-  cmds.push({ op: 'circle', x: cx - r * 0.34, y: cy - r * 0.02, r: Math.max(1.4, r * 0.1), fill: eye, tag: 'critter-eye', id: o.id });
-  cmds.push({ op: 'circle', x: cx + r * 0.34, y: cy - r * 0.02, r: Math.max(1.4, r * 0.1), fill: eye, tag: 'critter-eye', id: o.id });
-  // 标签
-  if (o.label) {
-    cmds.push({
-      op: 'text',
-      x: cx,
-      y: cy + r * 0.78,
-      text: o.label,
-      color: o.labelColor || THEME.INK,
-      font: '12px sans-serif',
-      align: 'center',
-      baseline: 'middle',
-      tag: 'critter-label',
-      id: o.id,
-    });
-  }
+    label: o.label, labelColor: o.labelColor,
+    eyeColor: o.eyeColor, stroke: o.stroke,
+    fillOverride: o.fill,          // 岗位/顾客固定色（非稀有度）：HUB/餐厅员工/顾客走此路径
+    colorPresetId: o.colorPresetId,
+    locked: o.locked,
+    accessory: o.accessory,
+  };
+  const out = PA.assembleCritter(spec, opts);
+  for (const c of out) cmds.push(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -558,7 +538,10 @@ function buildLounge(state) {
   owned.forEach((o, i) => {
     const cx = gx + (i % cols) * cw + cw / 2;
     const cy = gy + Math.floor(i / cols) * ch;
-    appendCritter(cmds, { x: cx, y: cy, r: 20, fill: RARITY_COLORS[o.rarity] || '#888888', frame, phase: i, id: 'lounge-' + o.id });
+    // 分层 fill 修正（R3）：角色本体用 12 身份配色（resolveCritterSpec → COLOR_PRESETS），
+    // 绝不把 RARITY_COLORS 涂到角色本体；稀有度色仅出现在 UI 卡框层（见 roster-rarity-bar）。
+    const spec = PA.resolveCritterSpec(o.id);
+    appendCritter(cmds, { x: cx, y: cy, r: 20, frame, phase: i, id: 'lounge-' + o.id, spec });
     cmds.push({ op: 'text', x: cx, y: cy + 32, text: o.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-critter-label' });
     cmds.push({ op: 'text', x: cx, y: cy + 46, text: 'A ' + (o.affinity || 0) + '/100', color: '#FBE3A1', font: '11px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-affinity' });
   });
@@ -589,12 +572,16 @@ function buildRoster(state) {
     const cx = gx + (i % cols) * cw + cw / 2;
     const cy = gy + Math.floor(i / cols) * ch;
     if (e.owned) {
-      appendCritter(cmds, { x: cx, y: cy, r: 18, fill: RARITY_COLORS[e.rarity] || '#888888', frame, phase: i, id: 'roster-' + e.id });
+      // 分层 fill 修正（R3）：角色本体用 12 身份配色（绝不稀有度色）；稀有度色仅留 UI 卡框条（下条）。
+      const spec = PA.resolveCritterSpec(e.id);
+      appendCritter(cmds, { x: cx, y: cy, r: 18, frame, phase: i, id: 'roster-' + e.id, spec });
+      // 稀有度色仅出现在 UI 卡框层（roster-rarity-bar / 抽卡 chip），与角色层物理分离，无 shader tint。
       cmds.push({ op: 'roundrect', x: cx - 20, y: cy - 26, w: 40, h: 6, r: 3, fill: RARITY_COLORS[e.rarity] || '#888888', stroke: null, lineWidth: 0, tag: 'roster-rarity-bar' });
       cmds.push({ op: 'text', x: cx, y: cy + 30, text: e.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-owned-label' });
     } else {
-      // 🔒 未拥有：同家族部件形状剪影（去色）+ ? 角标（家族隔离 #2 仍适用）
-      appendCritter(cmds, { x: cx, y: cy, r: 18, fill: '#3a3a4a', frame, phase: i, id: 'roster-locked-' + e.id });
+      // 🔒 未拥有：同家族部件形状剪影（单色去色）+ ? 角标（家族隔离 #2 仍适用，assembleCritter 已校验）
+      const spec = PA.resolveCritterSpec(e.id);
+      appendCritter(cmds, { x: cx, y: cy, r: 18, frame, phase: i, id: 'roster-locked-' + e.id, spec, locked: true });
       cmds.push({ op: 'text', x: cx, y: cy - 30, text: '?', color: '#777777', font: '18px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-locked-mark' });
     }
   });
