@@ -86,7 +86,7 @@
 
 **4.4.2 单只动物贴图预算**
 - **单只动物 = 0 张独立贴图**，仅引用**程序化部件绘制函数库**（canvas2d 矢量原语 + JSON 参数，atlas 字节=0，不变量#1）。
-- 新增一只动物 = 新增一组参数（~32–64 字节 JSON：partsId + colorPresetId + 表情Id + 形变参数），贴图字节零增长。
+- 新增一只动物 = 新增一组参数（~11–64 字节 JSON：partsId + colorPresetId + 表情Id + 形变参数，新手 N 动物部件少≈11B/只，见 asset-spec §2.4/§0），贴图字节零增长。
 - 组合空间 ≈5.2 万种 ≫ 所需；角色采用**策展式固定参数组**（非穷举），无需为角色数量扩 atlas。
 
 **4.4.3 程序化拼装规则（5 条 + 硬护栏）**
@@ -173,16 +173,16 @@
 ## 10. 星露谷 cozy 风 · 零贴图程序化视觉方向（中枢地图 + 四区域）
 
 > **状态：待复核（pending review）** · 本节为 v0.4 增量，对应新指令「最外层 = 主菜单式地图（星露谷画风），含 餐厅 / 仓库 / 员工休息区(猫咖) / 动才市场(抽卡) 四区域」。
-> 核心约束：微信原生 canvas、**程序化零贴图**；不变量 #1 = atlas 永不增长（不新增任何位图）；不变量 #2 = 家族硬隔离。所有视觉运行时用 **canvas2d 图元（路径/圆/弧/渐变）** 绘制，**不发布像素图/位图 sprite**。
+> 核心约束：微信原生 canvas、**程序化零贴图**；不变量 #1 = atlas 永不增长（不新增任何位图）；不变量 #2 = 家族硬隔离。所有视觉运行时用 **canvas2d 图元（clear/rect/roundrect/circle/ellipse/text 六类 op，R5 契约仅支持此集合，无 path/arc/bezier）** 绘制，**不发布像素图/位图 sprite**。
 
 ### 10.0 本节定位与管线冲突标注（重要 · 交 lead 协调）
 
 - **与 v0.3 关系**：继承 §1–§9（视觉定位 / 受众 / 色彩 / 角色语言 / 环境基调 / 字体 UI / 图标卡片 / 动画 / 可达性）。本节点**新增**「中枢地图层」与「四区域室内外」视觉方向，并把 §5 的「店外/店内/厨房」扩展为「地图 + 四区域房间」。v0.3 已锁定的稀有度、家族隔离、角色规格**全部沿用，不重开**。
 - **⚠️ 与 tech-prototype 的管线冲突（art 文档侧已解决）**：
   - **已修订（2026-07-29，OP1-A）**：v0.3 **§A.2–A.5 与 art/asset-spec.md 已由 art-director 改写为「微信原生 canvas2d 程序化部件绘制函数库 + JS 运行时填色」，Cocos / Spine / ASTC / PNG-atlas / 着色器 tint 表述全数去除**，atlas 字节=0（不变量#1）、家族隔离在绘制调用层生效（不变量#2）。
-  - **仍待修订**：`docs/architecture/tech-prototype.md` 的 **ADR-1（引擎=Cocos）/ ADR-2（base-parts PNG atlas + shader tint）** 仍写 Cocos + 位图 atlas + shader tint，与本次指令及 runtime `game.js`（微信原生 `wx.createCanvas()` + `getContext('2d')`，不引入 Cocos）冲突，需 **engineering-lead 按 OP1-A 回退修订**。
+  - **仍待修订**：`docs/architecture/tech-prototype.md` 的 **ADR-1（引擎=Cocos）/ ADR-2（base-parts PNG atlas + shader tint）** 仍写 Cocos + 位图 atlas + shader tint，与本次指令及 runtime `game.js`（微信原生 `wx.createCanvas()` + `getContext('2d')`，不引入 Cocos）冲突，需 **engineering-lead 按 OP1-A 回退修订**；另 **`src/assembly/index.js` 仍保留 legacy `ATLAS`（含 `ATLAS_BYTES≈0.45MB` 占位常量）/ `tint` 逻辑**（K1），当前未被 `render.js` 引用（render.js 用自有 `appendCritter`），亦属剩余 pivot 缺口，待 engineering-lead 回退/标注 `// DEPRECATED: OP1-A pivot`（见 §10.9 Q1）。
   - 本次指令明确「微信原生 canvas（不用 Cocos）、程序化零贴图、不能发布位图 sprite、所有视觉运行时 canvas2d 图元绘制」，与 runtime 一致。
-  - **本章结论**：程序化图元方案以 **「微信原生 canvas2d」** 为准（与 runtime + 本次指令一致）。art 文档侧（v0.3 §A + asset-spec）已完成回退修订；仅 tech-prototype ADR-1/ADR-2 待 engineering-lead 回退。本章保留对两种 atlas 定义的兼容讨论（见 §10.9 Q6）。
+  - **本章结论**：程序化图元方案以 **「微信原生 canvas2d」** 为准（与 runtime + 本次指令一致）。art 文档侧（v0.3 §A + asset-spec）已完成回退修订；另 `src/assembly/index.js` 与 tech-prototype ADR-1/ADR-2 待 engineering-lead 回退/标注 deprecated（K1）。零贴图下 atlas 唯一合法解为「完全 canvas2d 图元、不设任何位图」（见 §10.9 Q6，已闭环为 (b) 唯一合法）。
 - 开放问题汇总见 §10.9。
 
 ### 10.1 关键约束交底：把「星露谷 cozy」翻译进零贴图管线
@@ -192,7 +192,7 @@
 | # | cozy 视觉身份要素（全用 canvas2d 图元实现） | 落地手段 |
 |---|---|---|
 | 1 | 暖色有限调色板 | §10.3 提案；复用 §3.1 马卡龙核心四色 |
-| 2 | 圆润柔和形状 | `roundRect` / `arc` / 二次贝塞尔 描出 tile、家具、建筑、动物 |
+| 2 | 圆润柔和形状 | `roundRect` / `circle` / `ellipse` 组合描出 tile、家具、建筑、动物（R5 契约仅支持此六类 op，无 `arc`/`path`/`bezier`；平滑曲线以 `circle`/`ellipse` 近似） |
 | 3 | 简洁描边 | 统一 1–2px 暖棕 `#8A7268`（与 §3/§4 一致） |
 | 4 | 动物/建筑形状语言 | 动物复用 §4.4.1 部件词汇；建筑新增一组「建筑图元」（§10.7） |
 | 5 | 轻量运动（绘制动画而非 sprite sheet） | sine 呼吸/飘动/昼夜渐变、参数插值，无逐帧 PNG |
@@ -245,8 +245,8 @@
 
 **程序化图元构图：**
 - **地面**：大面积圆角方格 tile（`#A9D8A0` 草坡绿）平铺，tile 间隙留白/浅描边；局部小径（`#E8D2B0` 土色圆角长条）连接节点。
-- **天空/背景**：程序化垂直渐变（`#CDEAF2`→`#FBE3D2`）+ 1–2 朵圆角云（circle cluster）+ 远山（低多边形圆角 path，浅色）。
-- **区域节点**：每节点 = 一座小屋/摊位（`roundRect` 主体 + 三角/圆顶 roof + 暖木描边 + 招牌图标）。四节点形状语言见 §10.5。
+- **天空/背景**：程序化垂直渐变（`#CDEAF2`→`#FBE3D2`）+ 1–2 朵圆角云（circle cluster）+ 远山（多枚低饱和 `ellipse` 叠出起伏，或阶梯 `roundRect` 块山，浅色）。
+- **区域节点**：每节点 = 一座小屋/摊位（`roundRect` 主体 + 坡顶/穹顶 roof（见 §10.7：两块渐缩 `roundRect` 叠出坡面 或 `ellipse` 半球被主体覆盖成圆顶）+ 暖木描边 + 招牌图标）。四节点形状语言见 §10.5。
 - **视差**：天空层(慢) / 远山层(中) / 地块层(快) 三层 canvas2d 视差（平涂，非贴图）。
 - **动效**（遵循 §8 总纲，极慢）：云缓慢横移（sine x）、草尖轻摆（sine 旋转 ±2°）、节点 hover/点击弹跳（复用 §8.2）、昼夜可选（天空渐变随时间插值；reduce motion 关）。
 
@@ -258,8 +258,8 @@
 |---|---|---|---|---|
 | **(a) 餐厅室内** | 暖、邀请、陪伴主舞台（§5 店内） | 圆角桌椅（roundRect + 椭圆座垫）、布艺/木质（暖木 `#D9A878`）、暖吊灯（circle + 径向渐变光晕）、圆角吧台 | 樱粉主色块 + 暖橘 CTA（收菜/升级） | 动物员工自动走动（sine 平移 + 呼吸 idle §8.1）、出餐「+」飘字、吊灯柔光呼吸 |
 | **(b) 仓库**（资源货架） | 秩序、冷调微降明（§5 厨房冷调）、整理感 | 圆角货架（纵向 roundRect 格 + 暖木框）、资源罐（圆角罐 + 标签图标 ⭐/🍖/💎/碎片）、进度条（暖橘） | 薄荷绿 + 雾霾蓝冷调；货架格 uniform 圆角，避免 clutter | 新资源入架轻微下落弹跳；数值飘字 |
-| **(c) 员工休息区 / 猫咖** | cozy 室内、暖奶茶 `#F3E2C7`、软垫、懒散；陈列/互动已抽到的可爱动物（明日方舟基建风） | 圆角沙发/猫爬架（纵向 roundRect + 弧形）/ 软垫椭圆 / 暖灯 / 窗（圆角 + 渐变天光）；动物以 §4 程序化拼装按「房间格」陈列（grid of 圆角展位） | 奶茶暖调 + 鹅黄点缀；与图鉴关系见 §10.9 Q3 | 动物各自错相位 idle 呼吸/眨眼（§8.1）、hover 放大、窗光斜入（渐变光带缓移） |
-| **(d) 动才市场 / 抽卡摊位** | 惊喜、节庆、莓果 `#E8587E` + 星金 `#F4C95D` | 圆角摊位棚（弧形顶 + 条纹彩旗 ellipse cluster）、抽卡台（roundRect + 卡背图案）、稀有度双编码条（§7.2） | 星金顶 + 莓果红；SSR 演出（§8.3）用 canvas2d 粒子（非位图） | 抽卡演出（§8.3）：十连错位翻出；彩带=canvas2d 星形/曲线粒子；reduce motion 关粒子留定帧 |
+| **(c) 员工休息区 / 猫咖** | cozy 室内、暖奶茶 `#F3E2C7`、软垫、懒散；陈列/互动已抽到的可爱动物（明日方舟基建风） | 圆角沙发/猫爬架（纵向 roundRect + ellipse 弧形靠背/坐垫）/ 软垫椭圆 / 暖灯 / 窗（圆角 + 渐变天光）；动物以 §4 程序化拼装按「房间格」陈列（grid of 圆角展位） | 奶茶暖调 + 鹅黄点缀；与图鉴关系见 §10.9 Q3 | 动物各自错相位 idle 呼吸/眨眼（§8.1）、hover 放大、窗光斜入（渐变光带缓移） |
+| **(d) 动才市场 / 抽卡摊位** | 惊喜、节庆、莓果 `#E8587E` + 星金 `#F4C95D` | 圆角摊位棚（roundRect/ellipse 拱顶 + 条纹彩旗 ellipse cluster）、抽卡台（roundRect + 卡背图案）、稀有度双编码条（§7.2） | 星金顶 + 莓果红；SSR 演出（§8.3）用 canvas2d 粒子（非位图） | 抽卡演出（§8.3）：十连错位翻出；彩带=canvas2d 星形/曲线粒子；reduce motion 关粒子留定帧 |
 
 - **猫咖家族隔离**：陈列动物仍严格按 §4.4.3 护栏（仅同家族部件组合）；猫咖只是「展示容器」，不破家族隔离。
 
@@ -283,18 +283,22 @@
 
 **建筑图元（新增一组，非角色家族，纯场景；参数驱动，无位图）：**
 
-| 图元 | canvas2d 基元 | 关键参数 |
+| 图元 | canvas2d 基元（受 R5 契约支持：clear/rect/roundrect/circle/ellipse/text） | 关键参数 |
 |---|---|---|
 | 小屋主体 | `roundRect` | w / h / 圆角 / 木色 |
-| 屋顶 | `triangle` / `arc` | 色 / 描边 |
-| 招牌 | `roundRect` + 图标 | 区域图标（🏠/📦/🐱/🎴） |
+| 屋顶（坡顶） | 两块渐缩 `roundRect` 叠出梯形坡面（圆角软糯） | 色 / 描边 / 坡高 |
+| 屋顶（穹顶） | `ellipse`（半球，下半被 roundRect 主体覆盖成圆顶） | 色 / 描边 |
+| 招牌 | `roundRect` + 图标（`text`） | 区域图标（🏠/📦/🐱/🎴） |
 | 货架 | 网格 `roundRect` | 列 / 行 / 框色 |
-| 沙发 / 猫爬架 | `roundRect` + `arc` | 奶茶色 |
-| 摊位棚 | `arc` + 条纹 `ellipse` | 莓果/星金 |
-| 云 | circle cluster | 白 / 慢移相位 |
-| 远山 | low-poly rounded path | 浅色 |
+| 沙发 / 猫爬架 | `roundRect` + `ellipse`（弧形靠背/坐垫用 ellipse 近似） | 奶茶色 |
+| 摊位棚 | `roundRect`/`ellipse` 拱顶 + 条纹 `ellipse` cluster | 莓果/星金 |
+| 云 | `circle` cluster | 白 / 慢移相位 |
+| 远山 | `ellipse` cluster（多枚低饱和 ellipse 叠出起伏）或阶梯 `roundRect` 块山 | 浅色 |
 | 地砖 tile | `roundRect` | 草坡绿 / 留白 |
 | 小径 | 圆角长 `roundRect` | 土色 |
+
+> **R5 契约约束（2026-07-30 闭环）**：上表基元严格限于 `applyCommands`（render.js L769-829）支持的六类 op（`clear/rect/roundrect/circle/ellipse/text`）；`circle` 内部用 `arc`，但 `arc`/`path`/`triangle`/`polygon`/`bezier` **均非可用 op**。原 `triangle`(屋顶)/`arc`(沙发·摊位棚)/`low-poly rounded path`(远山) 已全部改写为 `roundRect`+`ellipse`/`circle` 组合。
+> **【待工程扩展契约 · 待办 K-EXT】**：若确须尖角屋顶/复杂山形剪影等 `path`/`polygon` 表现，不得在美术侧假定其存在；须先由 engineering-lead 在 `render.js applyCommands` 新增 `path`/`polygon` op（含真机 `roundRect`/`ellipse` 可用性确认与退化兜底，参考 L785-820），再回流美术生产。当前生产**一律只用上述六类 op**。
 
 - 全部由参数驱动，无位图；零贴图范式下**不保留任何白模 atlas**（不变量 #1 以「atlas 字节恒=0」成立），建筑图元与动物图元均由 canvas2d 矢量原语绘制。
 - 动物图元复用 §4.4.1 部件词汇（头/身/耳/尾/肢/面部/配件/表情/配色预设/表情集）。
@@ -311,12 +315,12 @@
 
 | # | 开放问题 | 归属 | 建议 |
 |---|---|---|---|
-| **Q1** | **管线冲突（art 文档侧已解决，tech-prototype 待办）**：v0.3 §A / asset-spec 原写 Cocos + PNG atlas + Spine + ASTC，已于 2026-07-29（OP1-A）由 art-director 回退修订为微信原生 canvas2d 程序化图元；tech-prototype ADR-1/ADR-2 仍写 Cocos + 位图 atlas + shader tint，runtime(`game.js`) 与本次指令为微信原生 canvas2d、零贴图、无 Spine。是否回退 tech-prototype 为「微信原生 canvas2d 程序化图元」？ | engineering-lead（程基岩） | art 文档已对齐；建议 engineering-lead 同步回退 tech-prototype ADR-1/ADR-2，避免生产歧义 |
+| **Q1** | **管线冲突（art 文档侧已解决，tech-prototype 与 assembly 待办）**：v0.3 §A / asset-spec 原写 Cocos + PNG atlas + Spine + ASTC，已于 2026-07-29（OP1-A）由 art-director 回退修订为微信原生 canvas2d 程序化图元；tech-prototype ADR-1/ADR-2 仍写 Cocos + 位图 atlas + shader tint，runtime(`game.js`) 与本次指令为微信原生 canvas2d、零贴图、无 Spine。**另 `src/assembly/index.js` 仍保留 legacy `ATLAS`（`ATLAS_BYTES=466096` 占位常量）/ `tint` 管线（K1），未被 `render.js` 引用，实际包体字节=0、R1 未被破坏，但叙事冲突，待 engineering-lead 回退或标注 `// DEPRECATED: OP1-A pivot`**。是否回退 tech-prototype + assembly 为「微信原生 canvas2d 程序化图元」？ | engineering-lead（程基岩） | art 文档已对齐；建议 engineering-lead 同步回退 tech-prototype ADR-1/ADR-2，并处置 `src/assembly/index.js` 的 legacy atlas/tint（K1），避免生产歧义 |
 | **Q2** | **区域命名映射**：地图四区域（餐厅/仓库/员工休息区(猫咖)/动才市场）vs UX Tab（餐厅/抽卡/图鉴/商店）。建议：动才市场=抽卡模块；员工休息区(猫咖)=已拥有动物可互动陈列；仓库=资源视图（UX Tab 未含）。请 design-strategist 在 `system-scene-map.md` 同步结构 | design-strategist | 等其并行产出后对齐命名 |
 | **Q3** | **猫咖 vs 图鉴**：猫咖（可互动陈列室）与图鉴（收集进度网格，UX §4.4）是否两处并存？或猫咖=图鉴的「沉浸式房间版」？ | design-strategist | 建议猫咖为「已拥有动物陈列/互动」，图鉴为「收集进度/筛选」，职责分离 |
 | **Q4** | **仓库入口**：仓库在 UX 导航（§1.1 底部 4 Tab）无独立入口；是地图节点独立场景，还是并入餐厅后台/某 Tab 子视图？ | design-strategist | 待 `system-scene-map.md` 定 |
 | **Q5** | **地图视角**：45° 斜视 vs 平视 cozy？影响图元绘制复杂度与 perf | 主理人 / 程基岩 | 建议先平视 cozy（实现成本最低、最贴合零贴图），待真机证伪 |
-| **Q6** | **atlas 定义**：「单白模 base-parts atlas」应理解为 (a) 仍保留一张极小白模形状图集（圆/方/三角/弧）供 tint，或 (b) 完全用 canvas2d path 绘制不设任何位图？两者都满足不变量 #1 | 程基岩 | 本章视觉方案对两者兼容；建议从 perf/包体确认 |
+| **Q6** | **atlas 定义（已闭环 2026-07-30 · 用户授权）**：零贴图下「单白模 base-parts atlas」**选项 (a) 保留白模形状图集（圆/方/三角/弧）供 tint 已删除**——保留位图 atlas 直接违反 atlas 字节=0（不变量#1）与 OP1-A pivot。现唯一合法解为 **(b) 完全用 canvas2d 图元（roundRect / circle / ellipse 等受 R5 契约支持的 op）绘制，不设任何位图**，与 asset-spec §2.2 一致。 | art-lead（已定） | (b) 唯一合法；不变量#1 以「atlas 字节恒=0」成立，零贴图契约严守 |
 
 **文档位置提醒（交 lead）**：本美术圣经实际位于 `art/art-bible.md`（非 `design/art/`）；UX 规格与三系统 GDD 交叉引用均指向 `art/art-bible.md v0.3`。若需统一至 `design/` 目录，请主理人裁定是否迁移，避免文档分叉。
 

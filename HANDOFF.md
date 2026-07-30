@@ -1,30 +1,34 @@
 # 项目交接文档 · 可爱小动物「卡牌收集 + 餐厅放置经营」微信小游戏
 
-> 交接目的：让新专家团队**无缝衔接**当前进度。
-> 整理时间：2026-07-28（北京时间）
-> 整理人：主理人 游承峰（编排者）。本包含 Phase 0–4 全部产物 + 当前阻断项与下一步。
-> **修订：2026-07-29 pivot to canvas2d（用户 OP1-A）**：引擎由「Cocos Creator + 微信引擎插件」改为「微信原生 canvas2d（无 Cocos）」；资产由「位图 atlas」改为「程序化绘制函数库（零位图）」；着色器 tint 改为 canvas2d 分层 fill。详见 `docs/architecture/tech-prototype.md` ADR-1/ADR-2/ADR-4 与 §2/§4。不变量 #1（零位图）/#2（家族硬隔离）不变。
+> **交接目的**：让新专家团队**无缝衔接**当前进度。
+> **整理时间**：2026-07-30（北京时间）
+> **整理人**：主理人 游承峰（编排者）。本包整合 Phase 0–4 产物 + 2026-07-29~07-30 的引擎 pivot、双流经济重构、§5 玩法增补、两份专家复核签字与 4 个 commit。
+> **修订**：2026-07-29 pivot to canvas2d（用户 OP1-A）；2026-07-30 双流经济落地 + §5 签字 + design/engineering 复核签字 + 设计文档收口（详见 git 链 `94d424b`→`1d4c8e9`→`81d5ae0`）。
+> **工作区路径**：`/Users/junzhi/WorkBuddy/Game/`（git 本地 main 链，全程**未 push**，无 remote）。
 
 ---
 
-## 0. 一句话定位
+## 0. 一段话总览（给接手团队）
 
-把 Steam 上爆发的「收集养成 + 模拟经营」机制**原创 IP 化**移植到**微信小游戏**：玩家抽/养可爱小动物作为**餐厅员工**，服务系统生成的**就餐顾客**赚资源，并解锁菜品驱动经营。平台硬约束是**主包 ≤4MB**，靠「程序化拼装资产管线」把单只动物贴图成本压到 ~0 字节。
+「可爱小动物餐厅」是一款面向女性向治愈人群的微信小游戏，把 Steam 上「收集养成 + 模拟经营」机制原创 IP 化移植：玩家抽/养可爱小动物作为**餐厅员工**，服务系统生成的**带菜需求顾客**赚资源、解锁菜品驱动经营；平台硬约束为**主包 ≤4MB**，故采用**微信原生 canvas2d + 程序化零贴图资产管线**（单只动物 0 独立贴图、家族硬隔离）。截至 2026-07-30，项目已完成 Phase 0–4（概念/系统 GDD/数值平衡/4MB 技术原型/预制作）、Phase 2 三场景渲染与导航、并把在线收益从「纯时间流」重构为**双流经济**（餐厅事件流主 80% + 宿舍时间流辅 20%、离线仅宿舍且 4h 封顶），Phase 3 放置 idle 循环与 Phase 3.5 离线待领取模态均已落地并通过 **155/155 测试、129KB<4MB、node boot 验收**；设计侧 §5 员工/顾客/菜品解锁与工程侧 5 个兜底文件均已完成并由 design-strategist / engineering-lead **复核签字**，C1/C2 文档公式口径已对齐。**下一阶段节点计划**：① 先 push 远端并真机验收双流手感；② 启动 Phase 5 正式按冲刺循环（实现→QA→设计评审），补 `PET_DAILY_CAP` 测试与 §5 星券三方竞争扩展平衡 pass（C3）；③ 推动 art-director 复核美术圣经/资产规格签字、完成构建与微信真机证伪（4MB/分层 fill/分包）；④ 接入 audio-director 与 release-ops-lead，在**锁参红线零改动**前提下做 v1.0 数值校准。
 
 ---
 
 ## 1. 阶段进度总览
 
-| Phase | 内容 | 状态 | 关键产物 |
+| Phase | 内容 | 状态 | 关键产物 / commit |
 |-------|------|------|----------|
-| 0 | 阶段诊断 / 市场扫描 | ✅ 完成 | `微信小程序移植机会扫描.md`（市场机会分级） |
-| 1 | 概念孵化 | ✅ 完成 | `design/gdd/concept-doc.md` v0.1.1 |
-| 2 | 系统 GDD（三系统八节） | ✅ 完成 | `system-gacha.md` / `system-idle-restaurant.md` / `system-cultivation.md` + `phase2-consistency.md` |
-| 2.x | 数值平衡 pass | ✅ 完成（编排者代执行） | `phase2-balance.md` + `src/analysis/balance-sim.js` |
-| 3 | 4MB 技术原型（提前做） | ✅ 逻辑层 PASS（构建/真机项待证伪） | `docs/architecture/tech-prototype.md` + `src/prototype/assembly-demo.js` |
-| 4 | 预制作 | ✅ 完成 | `design/ux/spec.md` / `art/asset-spec.md` / `production/epics.md` / `tests/README.md` / `production/sprint-1.md` |
-| 5 | 制作（按冲刺） | ⏸️ **未启动** | 受「待签字项」+ 下方阻断项阻塞 |
-| ★ | **核心玩法增补：员工/顾客/菜品解锁** | 🔴 **已提需求，未落盘** | 见 §5，是接手后**第一项设计任务** |
+| 0 | 阶段诊断 / 市场扫描 | ✅ 完成 | `微信小程序移植机会扫描.md` |
+| 1 | 概念孵化 | ✅ 完成 | `design/gdd/concept-doc.md` v0.1.2（已签字）|
+| 2 | 系统 GDD（三系统八节）| ✅ 完成 | `system-gacha.md` / `system-idle-restaurant.md` / `system-cultivation.md` + `phase2-consistency.md` |
+| 2.x | 数值平衡 pass | ✅ 完成 | `phase2-balance.md` + `src/analysis/balance-sim.js`（已双流重构重跑）|
+| 2.5 | ★ 核心玩法增补（员工/顾客/菜品解锁）| ✅ **已完成并签字** | §5 六份 GDD 修订 + `§5-revision-report.md`（design-strategist 签字 2026-07-30）|
+| 3 | 4MB 技术原型 | ✅ 逻辑层 PASS | `docs/architecture/tech-prototype.md` + `src/prototype/assembly-demo.js` |
+| 3.5 | 预制作 | ✅ 完成 | `design/ux/spec.md` / `art/asset-spec.md` / `production/epics.md` / `production/sprint-1.md` |
+| 4 | 双流经济重构（餐厅事件流 + 宿舍时间流）| ✅ 完成 | `src/restaurant/serve-accrual.js` + `src/economy/idle.js`（commit `94d424b`）|
+| 4.5 | Phase 3 放置 idle 循环 + Phase 3.5 离线待领取模态 | ✅ 完成 | `src/economy/storage.js` + `game.js` 接线（`94d424b`）|
+| 4.7 | 专家复核签字 | ✅ 完成 | `production/engineering-review-2026-07-30.md`（工程 PASS）、`production/design-review-2026-07-30.md`（设计 PASS）|
+| 5 | 制作（按冲刺循环）| ⏸️ **未正式启动** | 仅有垂直切片（sprint-5 餐厅三区/导航），缺 quality-lead 正式 QA 循环 |
 
 ---
 
@@ -32,110 +36,151 @@
 
 **平台与技术**
 - 微信小游戏；主包硬上限 **≤4MB**；分包按需加载（餐厅场景 / 扩展图鉴 / 音频音乐 / 活动运营）。
-- 引擎 **微信原生 canvas2d（无 Cocos / 引擎插件）**（pivot 2026-07-29，用户 OP1-A；`wx.createCanvas().getContext('2d')`，零位图，不占 4MB 主包）。
-- 资产 **程序化图元绘制（零位图）**：一套程序化部件绘制函数库（canvas2d 矢量原语 + JSON 参数，头6/身5/耳8/尾6/肢3 + 面部/配件/12配色/6表情）；**单只动物 0 独立贴图、~11–64 字节**；新增动物贴图字节零增长（pivot 2026-07-29：原「base-parts atlas 位图」改为绘制函数库）。
-- **家族硬隔离**：跨家族部件组合运行时抛 `FamilyIsolationError`（universal / 显式多家族槽位白名单例外）。
-- 分层 fill 上色（无 shader tint）：身份色（角色层）vs 稀有度色（UI 卡框层）分属不同绘制指令层（pivot 2026-07-29：原「着色器 tint」改为 canvas2d 分层 fill）。
+- 引擎 **微信原生 canvas2d（无 Cocos / 引擎插件）**（pivot 2026-07-29，用户 OP1-A；`wx.createCanvas().getContext('2d')`，零位图）。
+- 资产 **程序化图元绘制（零位图）**：头6/身5/耳8/尾6/肢3 + 面部/配件/12 配色/6 表情；**单只动物 0 独立贴图、~11–64 字节**；新增动物贴图字节零增长。
+- **家族硬隔离**：跨家族部件组合运行时抛 `FamilyIsolationError`。
+- 分层 fill 上色（无 shader tint）：身份色（角色层）vs 稀有度色（UI 卡框层）分属不同绘制指令层。
+- 渲染契约：`buildScene(state)` 纯函数 → 绘制指令数组（`op: clear/rect/circle/roundrect/ellipse/text`）；`applyCommands(ctx, cmds)` 落 2d 上下文。
 
-**产品参数**
-- 变现：混合 **IAP + IAA**。
-- 美术：Q 版治愈圆润。人群：女性向治愈。评审强度：精简 solo / 小团队。
+**产品参数（锁参红线，仅引用、绝不可改）**
+- 变现：混合 **IAP + IAA**；美术 Q 版治愈圆润；人群女性向治愈；评审强度精简 solo。
 - 稀有度 **N / R / SR / SSR**；**N = 免费基础动物，不进抽卡池**。
-- 抽卡池 **R 60% / SR 30% / SSR 10%**；**50 抽硬保底**；首十连 ≥1 SR；新手前 10 抽 ≥1 SR；软保底 41–49 抽阶梯 `SSR_rate(c)=min(1,0.10+0.09×(c−40))`。
-- 四货币：**星券**（免费，放置经营唯一生产源）/ **钻石**（付费 IAP，不进放置产出，与星券共享全局 pity）/ **食材**（经营副产）/ **碎片**（抽卡重复转化）。
-- **`offline_factor = 0.20`**（平衡 pass 由编排者代推，数值合理但**待 design-strategist 签字**——见 §6-A）。
+- 抽卡池 **R 60% / SR 30% / SSR 10%**；**50 抽硬保底**；首十连 ≥1 SR；新手前 10 抽 ≥1 SR；软保底 41–49 阶梯 `SSR_rate(c)=min(1,0.10+0.09×(c−40))`。
+- 四货币：**星券**（免费，放置经营唯一生产源）/ **钻石**（付费 IAP，不进放置产出，与星券共享全局 pity）/ **食材**（经营副产，**仅宿舍时间流副产、离线不计食材**）/ **碎片**（抽卡重复转化）。
+- **`offline_factor = 0.20`**（平衡 pass，2026-07-30 design-strategist 签字 PASS）；离线 cap `T_CAP=14400s`（4h）。
 - 升级成本：座位 `200×1.5ⁿ`、站点/菜谱 `150×1.4ⁿ`。养成羁绊 idle `+3%/只`（上限 +30%）、碎片 `+10%`（上限 +20%）。
+
+**双流经济新增 tunable（非锁参，可调）**
+- `DORM_SHARE = 0.25`（宿舍时间流占在线收益比；餐厅=1−DORM_SHARE=80%）。
+- `T_ORDER = 5`（餐厅每单服务周期秒数；不影响总速率 `I_eff`）。
+- §5 解锁曲线：`UNLOCK_COST_STAR = 200×1.35ⁿ` / `UNLOCK_COST_FOOD = 40×1.30ⁿ`；三岗加成 `CHEF_PER_LEVEL/WAITER_PER_LEVEL=+8%`、`HOST_PER_LEVEL=+6%`；`AFFINITY_BONUS=1.5`；`ACTIVE_BONUS=0.15`。
 
 ---
 
 ## 3. 文件清单（路径 / 内容 / 状态）
 
+**设计（design/）**
 | 路径 | 内容 | 状态 |
 |------|------|------|
-| `design/gdd/concept-doc.md` | 概念文档：三支柱/ MDA / 核心+元循环/范围分层/视觉锚点 | ✅ 终稿 v0.1.1 |
-| `design/gdd/system-gacha.md` | 抽卡系统八节 GDD（R60/SR30/SSR10、50 保底、碎片/升星） | ✅ 终稿（待按 §5 措辞定性为「产员工」） |
-| `design/gdd/system-idle-restaurant.md` | 放置经营八节 GDD（**尚未含员工/顾客/菜品解锁**，见 §5） | ⚠️ 旧版，需重大修订 |
-| `design/gdd/system-cultivation.md` | 养成系统八节 GDD（羁绊/好感/加成） | ✅ 终稿（待按 §5 定性为「养员工」） |
-| `design/gdd/phase2-consistency.md` | 跨 GDD 一致性自评 | ✅ 终稿（待补 §5 条目） |
-| `design/gdd/phase2-balance.md` | 数值平衡 pass 报告（真实模拟表+修订+残留风险） | ✅ 终稿（编排者代执行，标注待复核） |
-| `design/ux/spec.md` | UX 规格（☰Hub+底部4Tab、5屏线框、可访问性双编码） | ✅ v0.1（待补员工管理/菜品研发/顾客需求界面） |
-| `art/art-bible.md` | 美术圣经九节 + 程序化拼装生产清单 | ✅ v0.3 |
-| `art/asset-spec.md` | 资产规格（生产清单/Atlas打包/分层tint/分包/可访问性） | ✅ v0.1 |
-| `docs/architecture/tech-prototype.md` | 4MB 技术原型规格（五层架构/4 ADR/首包预算/V1–V7/R1–R7） | ✅ v0.1（逻辑层 PASS，构建/真机项待证伪；2026-07-29 pivot to canvas2d） |
-| `production/epics.md` | 10 Epic 详述 + Top2 Epic Story 拆分 + Sprint1 候选 | ✅ v0.1 |
-| `production/sprint-1.md` | **首个冲刺计划（垂直切片）** | ✅ v0.1（主理人汇编） |
-| `tests/README.md` | 测试四分层 + 5 条关键不变量 + CI 体积门禁 | ✅ v0.1（脚手架） |
-| `src/prototype/assembly-demo.js` | 可运行拼装参考实现（atlas 零增长/家族隔离/打包断言） | ✅ 实测通过 |
-| `src/analysis/balance-sim.js` | 有界 30 天 F2P 经济模拟（平衡 pass 用） | ✅ 实测通过 |
-| `微信小程序移植机会扫描.md` | 市场扫描与可行性分析主报告 | ✅ 参考 |
+| `design/gdd/concept-doc.md` | 概念文档：三支柱/MDA/核心+元循环/范围分层 | ✅ v0.1.2 已签字 |
+| `design/gdd/system-gacha.md` | 抽卡系统八节 GDD（产出=员工）| ✅ v0.1.1 已签字 |
+| `design/gdd/system-idle-restaurant.md` | 放置经营八节 GDD + **§2.5 双流模型** | ✅ v0.3（双流+§5 已植入，design 签字）|
+| `design/gdd/system-cultivation.md` | 养成系统八节 GDD（养员工/岗位加成）| ✅ v0.1.1 已签字 |
+| `design/gdd/system-scene-phase2.md` | 场景三（囤囤仓/撸毛馆/图鉴）GDD | ✅ 已落盘（**art-director 未签字**）|
+| `design/gdd/system-scene-map.md` | 场景/导航架构 GDD | ✅ v0.1（draft，待 lead review）|
+| `design/gdd/phase2-consistency.md` | 跨 GDD 一致性自评 | ✅ v0.2（含 §5 条目）|
+| `design/gdd/phase2-balance.md` | 数值平衡 pass（**双流口径已对齐**）| ✅ v0.3（design 签字）|
+| `design/ux/spec.md` | UX 规格 | ✅ v0.1 |
 
-> 全部位于工作区根 `/Users/junzhi/WorkBuddy/2026-07-28-16-19-38/` 下。本 HANDOFF.md 也在根目录。
+**美术（art/）**
+| 路径 | 内容 | 状态 |
+|------|------|------|
+| `art/art-bible.md` | 美术圣经九节 + 程序化拼装生产清单 | ✅ v0.3（**art-director 未签字**）|
+| `art/asset-spec.md` | 资产规格（生产清单/分包/可访问性）| ✅ v0.1（**art-director 未签字**）|
+
+**架构 / 生产（docs/、production/）**
+| 路径 | 内容 | 状态 |
+|------|------|------|
+| `docs/architecture/tech-prototype.md` | 4MB 技术原型（五层架构/4 ADR/首包预算）| ✅ v0.1（逻辑层 PASS，构建/真机待证伪）|
+| `production/epics.md` | 10 Epic + Top2 Story 拆分 | ✅ v0.1 |
+| `production/sprint-1.md` / `sprint-2.md` / `sprint-5.md` | 冲刺计划（垂直切片）| ✅ |
+| `production/engineering-review-2026-07-30.md` | 工程复核签字报告（5 兜底文件 PASS）| ✅ 已签字 |
+| `production/design-review-2026-07-30.md` | 设计复核签字报告（3 文档 PASS + C1/C2）| ✅ 已签字 |
+| `production/design-review/`、`production/qa/` | 复核/QA 归档子目录 | ✅ |
+| `§5-revision-report.md`（根）| §5 六份 GDD 修订报告 | ✅ 已签字 |
+
+**实现（src/）**
+| 路径 | 内容 | 状态 |
+|------|------|------|
+| `src/config/tunables.js` | TUNED/LOCKED 全部旋钮 | ✅（含 DORM_SHARE/T_ORDER/OFFLINE_CAP_HOURS）|
+| `src/economy/ledger.js` | 账本（幂等 requestId）| ✅ |
+| `src/economy/idle.js` | **宿舍时间流 + 离线**（降级后职责）| ✅（engineering 签字）|
+| `src/economy/ieff.js` | I_eff / 离线数学 | ✅ |
+| `src/economy/storage.js` | 存档（wx→localStorage→内存三级）| ✅ |
+| `src/restaurant/restaurant.js` | computeIeff / serve / 三岗 | ✅ |
+| `src/restaurant/customer.js` | 顾客生成 + 带菜需求 + matchServiceable | ✅ |
+| `src/restaurant/dish.js` | 菜品解锁 | ✅ |
+| `src/restaurant/staff.js` | 员工三岗 | ✅ |
+| `src/restaurant/serve-accrual.js` | **餐厅主收入事件流**（双流核心）| ✅（engineering 签字）|
+| `src/roster.js` | 图鉴（去重登记 + view()🔒）| ✅（engineering 签字）|
+| `src/cultivation.js` | 撸毛（仅好感度，零货币）| ✅（engineering 签字）|
+| `src/ui/render.js` | 绘制指令构建（含场景三/离线领取模态）| ✅（engineering 签字）|
+| `src/analysis/balance-sim.js` | 经济模拟（**已双流重构重跑**）| ✅ |
+| `src/assembly/`、`src/prototype/`、`src/gacha/` | 拼装参考 / 原型 / 抽卡 | ✅ |
+| `game.js` | 主循环（idle 接线 + 餐厅 serve 流 + 离线结算 + DEV_DEMO_SEED gate）| ✅ |
+
+**测试（tests/）**
+| 路径 | 内容 | 状态 |
+|------|------|------|
+| `tests/unit/*.spec.js`（12 个）| 装配/经济/抽卡/idle/餐厅 serve/UI 状态等 | ✅ **155 用例全绿** |
+| `tests/smoke/build-size.gate.js` | 体积门禁（<4MB）| ✅ 当前 **129KB** |
+| `tests/README.md` | 测试四分层 + 不变量 + CI | ✅ |
 
 ---
 
 ## 4. 已验证的事实（可信结论，无需重做）
-
-- **4MB 资产风险已证伪（逻辑层）**：`assembly-demo.js` 实跑——参数注册表字节 `delta=0`（pivot 2026-07-29：原「atlas」= 程序化参数注册表，零位图）、单只参数 ≈11B、跨家族组合正确抛 `FamilyIsolationError`。✅
-- **首包预算 ≈0.4–0.9MB（零位图后）**（无引擎插件 + 核心框架 ~0.3–0.5MB + 引导程序化绘制库参数 ≈0 + 配置/字体）。pivot 2026-07-29 由 Cocos+atlas 改为微信原生 canvas2d + 零位图，预算显著下降。✅ 但有**构建证伪**缺口（见 §7，以 `tests/smoke/build-size.gate.js` 实测为准）。
-- **经济自洽（模拟）**：星券为放置+抽卡单值源；bond +30% ≪ 单分支升级 +140%（无主导策略）；离线 3× 在线但 4h×20% 封顶。✅
-- **早期偏慷慨**：纯抽卡 ~0.9 周达 50 保底 → 已下调 `offline_factor 0.25→0.20` 放缓。🟡
-
----
-
-## 5. 🔴 阻断项 / 接手第一项任务：核心玩法增补（员工/顾客/菜品解锁）
-
-**用户指令（2026-07-28 20:52）**：小动物分两类——①**餐厅员工**（玩家经抽卡/养成获得的角色资源）②**就餐顾客**（系统生成）；员工通过**服务顾客**获取资源；**菜品需玩家以合理资源解锁**。
-
-**已与用户确认的设计分叉（4 项全采纳推荐）**：
-1. 顾客**带「想吃的菜」上门** → 解锁菜品成为核心驱动力。
-2. 解锁资源 = **星券 + 食材**（经营副产即解锁资源，闭环自洽，不引入新资源）。
-3. 员工分三岗：**厨师 / 服务员 / 接待**（不同动物适配不同岗，策略深度）。
-4. 服务机制 = **被动+主动加成**（就座基础被动结算 + 玩家主动派遣/点击拿加成）。
-
-**当前状态**：⚠️ **该修订尚未落盘**。design-strategist 两次派发（先全量 6 文件、后聚焦单文件）均返回空 / 未改动磁盘（agent 执行后端 flaky，与本包 §8 注记的 DNS 故障同源）。`system-idle-restaurant.md` 仍是 20:26 旧版。
-
-**新团队接手动作（建议顺序）**：
-1. 派 **design-strategist** 按上述 4 决策修订 `system-idle-restaurant.md`（新增：员工/顾客二分、顾客带需求生成、服务结算公式、三岗加成、菜品解锁子模块+食材 sink），并同步微调 `system-gacha.md`（产出=员工）、`system-cultivation.md`（养员工/岗位加成）、`concept-doc.md` 核心循环、`phase2-consistency.md`、`design/ux/spec.md`（员工管理/菜品研发/顾客需求界面）。务必要求 agent **逐文件回复编辑确认**并**抽查磁盘 mtime** 验证落地。
-2. 派 **engineering-lead** 在 `production/epics.md` 补：顾客生成、菜品解锁、员工三岗排班 的 Epic/Story；在 `tests/README.md` 增对应不变量（如菜品解锁扣费原子性、顾客需求-解锁匹配）。
-3. 派 **art-director** 在 `art/asset-spec.md` 补：员工（围裙/名牌/岗位标识）vs 顾客（访客）视觉区分规范。
+- **4MB 资产风险已证伪（逻辑层）**：`assembly-demo.js` 实跑——参数注册表字节 `delta=0`、单只参数 ≈11B、跨家族正确抛 `FamilyIsolationError`。
+- **首包预算 ≈0.4–0.9MB**（零位图后）；当前整包 `size-gate` **129KB < 4MB**，`node game.js` **I_eff=0.540000 + booted OK**。
+- **双流经济已实现并测试**：餐厅事件流 ≈在线 80%、宿舍时间流 ≈20%、离线仅宿舍（`dorm_rate×0.20`）、4h 封顶 ≈389★；155/155 测试覆盖（含 `restaurant-serve.spec.js` 断言「餐厅≫宿舍」）。
+- **经济自洽（模拟）**：星券为放置+抽卡单值源；双流口径下 early 合计 355★/日、离线占比 ~32%、50 保底 ~2.0 周（`balance-sim.js` 重跑确认）。
+- **两份专家复核签字已落盘**：engineering-lead（5 兜底文件 PASS）、design-strategist（3 文档 PASS + C1/C2 公式对齐）。
 
 ---
 
-## 6. 待签字 / 待拍板项（不阻塞 P0，但设计评审前需闭合）
+## 5. 核心玩法增补 §5（已完成并签字，非阻断）
+- 顾客**带「想吃的菜」上门** → 解锁菜品成核心驱动力；菜品解锁 = 星券 + 食材（不引新资源）。
+- 员工分三岗（厨师/服务员/接待），岗位适配 affinity 1.5；服务 = 被动基础结算 + 主动「加把劲」加成（ACTIVE_BONUS=0.15）。
+- 已植入 6 份 GDD（system-idle-restaurant v0.3 / system-gacha v0.1.1 / system-cultivation v0.1.1 / concept-doc v0.1.2 / phase2-consistency v0.2 / phase2-balance v0.3）+ `§5-revision-report.md`，design-strategist 复核签字 PASS（2026-07-30）。
+- 注：早前旧 HANDOFF 将其列为「未落盘阻断项」——**现已解决**，请勿重复派工。
 
+---
+
+## 6. 双流经济模型（已实现，落地于 `94d424b`）
+- **流 A 餐厅（主，事件驱动·半自动+点击加成）**：每 `T_ORDER=5s` 若可运营（在岗员工>0 且顾客需求可匹配）结算一单 `reward = I_eff × T_ORDER × (active?1+ACTIVE_BONUS:1)`；飘字 `+N★`。等效速率恒为 `I_eff`，占在线 80%。
+- **流 B 宿舍/撸毛馆（辅，时间流）**：`dorm_rate = DORM_SHARE×I_eff = 0.25×0.54=0.135/s` 场景无关涓流，占在线 20%；食材副产 `0.02/s`、离线不计。
+- **离线仅宿舍**：`dorm_rate × OFFLINE_FACTOR(0.20)`，`capStars()=dorm_rate×0.20×OFFLINE_CAP_HOURS(4)×3600≈389★`；待领取上限 + 阻塞式领取模态（`src/ui/render.js` 的 `buildOfflineClaim`）。
+- 餐厅流**场景无关**（在线且可运营即跑），离线（游戏关闭）= 仅宿舍。
+
+---
+
+## 7. 待签字 / 待拍板项
 | # | 事项 | 状态 | 建议 |
 |---|------|------|------|
-| **A** | `offline_factor` 0.25→0.20 由编排者代推，需 design-strategist 签字 | 🟡 待签 | 数值合理，建议确认 |
-| **B** | 导航（☰Hub + 底部 4 Tab） | 🟡 待确认 | 单手可达，建议采纳 |
-| **C** | 保底展示粒度（显「距保底 X/50」软提示 vs 仅进度条） | 🟡 待确认 | 建议软提示 |
-| **D** | 概率公示样式（微信强制公示 vs 治愈低压力） | 🟡 待确认 | 折叠小字满足合规 |
-| **E** | 广告位权重（IAA 入口 vs 无打扰治愈） | 🟡 待确认 | 次级样式、明确「可选」 |
-| **F** | 图鉴🔒收藏焦虑展示策略 | 🟡 待确认 | 进度环强调「已得%」 |
+| A | `offline_factor` 0.20 | ✅ **已签**（design-strategist 2026-07-30）| 闭合 |
+| B | 导航（☰Hub + 底部 4 Tab）| 🟡 待确认 | 建议采纳 |
+| C | 保底展示粒度 | 🟡 待确认 | 建议软提示 |
+| D | 概率公示样式 | 🟡 待确认 | 折叠小字合规 |
+| E | 广告位权重 | 🟡 待确认 | 次级「可选」 |
+| F | 图鉴🔒收藏焦虑策略 | 🟡 待确认 | 进度环强调「已得%」|
+| **G** | **art-director 复核签字**（art-bible / asset-spec / system-scene-phase2 视觉身份）| 🔴 **未签** | art-director 后端最不稳定，须磁盘核验 |
+| H | audio-director 接入（音乐/音效方向）| ⚪ 未启动 | Phase 6 打磨前 |
+| I | release-ops-lead 接入（发布/本地化/Live Ops）| ⚪ 未启动 | Phase 7 前 |
 
 ---
 
-## 7. 已知风险与残留证伪项
-
-- 🔴 **构建/真机证伪仍为最大未消项**：`tech-prototype.md` 的 V4（主包<4MB）、V5（canvas2d 分层 fill）、V6（微信原生 canvas2d 渲染就绪）、V7（分包命中）及 R1–R7（帧率/冷启/分包耗时/广告/IAP/内存）目前仅逻辑层+预算估算。**必须真实构建 + 微信真机**才能证伪（pivot 2026-07-29：非 Cocos 构建）。Sprint 1 的 CI 体积门禁是第一步。
-- 🟡 **atlas 烘焙常量待替换**：`assembly-demo.js` 的 `ATLAS_BYTES` 为占位，E2-S5 须以真实烘焙图集替换并复核首包 0.8–1.2MB 行（标记为 R-ATLAS-CONST）。
-- 🟡 **数值为初版常数**：曲线常数（含 `offline_factor`）待 v1.0 前数值平衡 pass 校准；结构不动只调数。
-
----
-
-## 8. 协作机制与工具注记（给新主理人）
-
-- **角色纪律**：编排者只编排不建造；GDD/架构/测试等专业产出由对应专家（design-strategist / engineering-lead / art-director / audio-director / quality-lead / release-ops-lead）产出，经主理人汇编。
-- **质量门**：阶段切换处有 PASS/CONCERNS/FAIL 判定；CONCERNS/FAIL 须先解决或用户豁免。
-- **产物落盘**：所有 spawn 任务须指定 Output Path，成员用 SendMessage 回传主理人，禁止成员间直连。
-- ⚠️ **agent 后端 flaky 史**：本项目中 design-strategist / art-director 曾因 agent 执行后端（`copilot.tencent.com`）DNS 故障（`getaddrinfo ENOTFOUND`）派发失败/迟发。若再遇 agent 长时间无落盘，**先查磁盘 mtime 验证**，必要时用本地 node/工具代执行并明确标注「待专家复核」。派发大任务时建议**拆小**、并要求 agent **逐文件回复编辑确认**。
+## 8. 已知风险与残留证伪项
+- 🔴 **构建/真机证伪仍为最大未消项**：`tech-prototype.md` 的 V4（主包<4MB）、V5（canvas2d 分层 fill）、V6（微信原生 canvas2d 渲染就绪）、V7（分包命中）及 R1–R7（帧率/冷启/分包/广告/IAP/内存）目前仅逻辑层+预算。**必须真实构建 + 微信真机**证伪。
+- 🟡 **atlas 烘焙常量待替换**：`assembly-demo.js` 的 `ATLAS_BYTES` 为占位（标记 R-ATLAS-CONST）。
+- 🟡 **C3**：§5 星券三方竞争（升级 vs 抽卡 vs 解锁）扩展重算留待 **Phase 5 专项 balance pass**。
+- 🟡 **测试缺口**：缺 `PET_DAILY_CAP` 单测断言（建议补一条日上限置灰断言）。
+- 🟡 **demo seed 红线**：`game.js` 的 `ui-seed` 已 gate 到 `DEV_DEMO_SEED=false`（默认关），生产零注入；确认永不对其开默认真。
 
 ---
 
-## 9. 立即下一步（new team 接手清单）
+## 9. 协作机制与工具注记（给新主理人）
+- **角色纪律**：编排者只编排不建造；GDD/架构/测试等专业产出归对应专家，经主理人汇编。
+- **质量门**：阶段切换处 PASS/CONCERNS/FAIL 判定；CONCERNS/FAIL 须先解决或用户豁免。
+- **产物落盘**：spawn 任务须指定 Output Path；成员用 SendMessage 回传主理人，禁止成员间直连。
+- ⚠️ **agent 后端 flaky 史**：design-strategist / art-director / engineering-lead 子 agent 后端（copilot.tencent.com）曾因 DNS 故障派发空回。经验：**派发后必磁盘核验**（`grep` mtime / `git status` / 报告文件存在），不轻信回传；空回则主理人 dirext 落盘并标注「待对应专家复核签字」，后续重试补签（07-30 已验证 engineering-lead / design-strategist 重试可成功，art-director 仍最不稳）。
 
-1. **[P0 设计]** 完成 §5 的员工/顾客/菜品解锁 GDD 修订（当前最大缺口）。
-2. **[P0 工程]** 基于修订补 `production/epics.md` 的菜品解锁/顾客生成/三岗 Story + `tests/README.md` 不变量。
-3. **[P1]** 闭合 §6 签字项 A–F（A 为硬性待签）。
-4. **[P1]** 启动 Sprint 1（P0–P11）逻辑闭环，接通 `tests/` 不变量 + CI 体积门禁。
-5. **[P2]** 进 Phase 5 每冲刺循环：engineering-lead 实现 → quality-lead QA/烟雾 → design-strategist 设计评审 → 主理人收尾。
-6. **[持续]** 排真机/构建证伪 V4–V7 / R1–R7。
+---
+
+## 10. 节点计划 / 立即下一步（new team 接手清单）
+1. **[P0]** 用户给 remote URL → `git push`（本地 main 链 `e948e9c→…→94d424b→1d4c8e9→81d5ae0`，全程未推送）。
+2. **[P0]** 真机验收：DevTools reload 后看餐厅每 ~5s「+N★」飘字 + 点空白「加把劲」×1.15；离线/后台返回「待领取」模态与 4h 封顶。
+3. **[P1]** 启动 **Phase 5 正式冲刺循环**：engineering-lead 实现就绪 Story → quality-lead QA/烟雾测试 → design-strategist 设计评审 → 主理人收尾。优先补 `PET_DAILY_CAP` 测试。
+4. **[P1]** **C3 平衡 pass**：§5 星券三方竞争扩展重算（design-strategist 主导）。
+5. **[P1]** 推动 **art-director 复核签字**（G：art-bible / asset-spec / system-scene-phase2），务必磁盘核验。
+6. **[P2]** 构建 + 微信真机证伪 V4–V7 / R1–R7（4MB / 分层 fill / 分包 / 帧率）。
+7. **[P2]** 接入 **audio-director**（H）与 **release-ops-lead**（I）；在锁参红线零改动前提下做 v1.0 数值校准。
+8. **[持续]** 闭合 §7 签字项 B–F。

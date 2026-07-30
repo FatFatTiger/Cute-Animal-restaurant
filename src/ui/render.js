@@ -24,15 +24,35 @@
 // 集中锁参（纯 JS，零 wx；不变量纪律：概率/保底/成本只从此读，不硬编码）
 const { LOCKED, TUNED } = require('../config/tunables');
 
-// 稀有度色板（身份色由角色层决定，此处仅 UI 卡面/演出用稀有度色，与 ADR-4 分层一致）
-const RARITY_COLORS = {
-  N: '#9aa0a6',
-  R: '#5bc0eb',
-  SR: '#c77dff',
-  SSR: '#ffd166',
+// ─────────────────────────────────────────────────────────────────────────
+// 视觉身份（art-bible 锁定，非开发占位）
+// 基底色板取自 art/art-bible.md §3.1 暖奶油马卡龙核心四色 + §10.3 场景 accent。
+// 任何改动本区须与美术圣经对齐；回归暗色（如旧开发占位 #1a1a2e）即视觉身份漂移
+// （K2，见 production/art-review-2026-07-30.md）。仅渲染层颜色常量，非锁参/经济逻辑。
+// ─────────────────────────────────────────────────────────────────────────
+const THEME = {
+  BG: '#FBF1E6',            // 暖奶油基底（奶白 #FFF7EF 暖调派生）；替代旧开发占位 #1a1a2e
+  PANEL: '#FFF7EF',         // 奶白卡面（§3.1）
+  PANEL_STROKE: '#D9A878',  // 暖木描边（§10.3）
+  INK: '#5A4A42',           // 暖墨主文字（§3.1）
+  INK_SOFT: '#7A6A5A',      // 次级暖墨
+  CTA: '#FF9E68',           // 暖橘 CTA（§3.1）
+  GOLD: '#F4C95D',          // 星金强调（§7.2 SSR）
+  BERRY: '#E8587E',         // 莓果红（§10.3 市集彩）
 };
 
-// 三岗色板（员工色块区分岗位）
+// 稀有度色板（art-bible §7.2 锁定 hex：N:#A8C0B0 / R:#8FB8E0 / SR:#C9A6E8 / SSR:#F4C95D）
+// 仅用于 UI 卡框层 / 稀有度演出（抽卡 chip、图鉴稀有度条、榜单角标）；角色本体填色属身份色
+// 层（R3 分层 fill），待真实部件装配（12 配色预设）接入后改身份色，本处为 Phase 2 fallback 占位。
+// 非开发占位、锁参不可改；与 src/assembly/index.js RARITY 一致。
+const RARITY_COLORS = {
+  N: '#A8C0B0',
+  R: '#8FB8E0',
+  SR: '#C9A6E8',
+  SSR: '#F4C95D',
+};
+
+// 三岗身份色（角色层岗位区分；非稀有度色，R3 分层纪律：身份色在角色层）—— 维持原值不改
 const ROLE_COLORS = {
   chef: '#ff8c5a',
   waiter: '#5bc0eb',
@@ -45,7 +65,7 @@ const ROLE_LABEL = {
   host: 'Host',
 };
 
-const BG = '#1a1a2e';
+const BG = THEME.BG;
 
 /** 场景 id 常量（导航状态机与命中检测共用）。 */
 const SCENE = {
@@ -104,7 +124,7 @@ function appendCritter(cmds, o) {
       x: cx,
       y: cy + r * 0.78,
       text: o.label,
-      color: o.labelColor || '#ffffff',
+      color: o.labelColor || THEME.INK,
       font: '12px sans-serif',
       align: 'center',
       baseline: 'middle',
@@ -136,7 +156,7 @@ function appendGachaResult(cmds, lg, startY) {
     cmds.push({
       op: 'text', x: chipX + 18, y: chipY + 18,
       text: (d.animalId || d.rarity).slice(0, 6),
-      color: '#1a1a2e', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'rarity-text', animalId: d.animalId, rarity: d.rarity,
+      color: '#4a3f3a', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'rarity-text', animalId: d.animalId, rarity: d.rarity,
     });
   });
 }
@@ -244,10 +264,10 @@ function hitHubRegion(x, y, w, h, ctx) {
 /** 把单个中枢区域（建筑 + 迎宾小动物 + 标签 + 锁定遮罩）追加进 cmds。 */
 function appendHubRegion(cmds, reg, state) {
   const active = state.navigation && state.navigation.scene === reg.id;
-  const stroke = reg.locked ? '#5a5a7a' : active ? '#ffd166' : '#3a3a66';
+  const stroke = reg.locked ? '#C9B8A8' : active ? THEME.GOLD : THEME.PANEL_STROKE;
   cmds.push({
     op: 'roundrect', x: reg.x, y: reg.y, w: reg.w, h: reg.h, r: 16,
-    fill: reg.locked ? '#26264a' : '#2e2e55',
+    fill: reg.locked ? '#EFE6DC' : THEME.PANEL,
     stroke, lineWidth: active ? 3 : 2, tag: 'hub-region', id: reg.id, locked: reg.locked,
   });
   // 迎宾小动物（门口装饰，复用角色绘制库；idle 相位按区域错开）
@@ -259,21 +279,21 @@ function appendHubRegion(cmds, reg, state) {
     : ROLE_COLORS.host;
   appendCritter(cmds, {
     x: critterX, y: critterY, r: 16,
-    fill: reg.locked ? '#6b6b8f' : fillByRole,
+    fill: reg.locked ? '#B7AEA0' : fillByRole,
     frame: state.frame || 0, phase: (reg.id.charCodeAt(0) || 0) % 7,
     id: 'hub-' + reg.id,
   });
   // 区域标签
   cmds.push({
     op: 'text', x: reg.x + reg.w / 2, y: reg.y + reg.h - 26, text: reg.label,
-    color: '#ffffff', font: '15px sans-serif', align: 'center', baseline: 'middle', tag: 'hub-region-label', id: reg.id,
+    color: THEME.INK, font: '15px sans-serif', align: 'center', baseline: 'middle', tag: 'hub-region-label', id: reg.id,
   });
   // 锁定遮罩 + 「即将开放」
   if (reg.locked) {
-    cmds.push({ op: 'roundrect', x: reg.x, y: reg.y, w: reg.w, h: reg.h, r: 16, fill: 'rgba(20,20,40,0.55)', stroke: null, lineWidth: 0, tag: 'hub-locked', id: reg.id });
+    cmds.push({ op: 'roundrect', x: reg.x, y: reg.y, w: reg.w, h: reg.h, r: 16, fill: 'rgba(90,74,66,0.40)', stroke: null, lineWidth: 0, tag: 'hub-locked', id: reg.id });
     cmds.push({
       op: 'text', x: reg.x + reg.w / 2, y: reg.y + reg.h / 2, text: '🔒 即将开放',
-      color: '#cfcfe6', font: '14px sans-serif', align: 'center', baseline: 'middle', tag: 'hub-locked-label', id: reg.id,
+      color: '#9a8a78', font: '14px sans-serif', align: 'center', baseline: 'middle', tag: 'hub-locked-label', id: reg.id,
     });
   }
 }
@@ -361,29 +381,29 @@ function buildGachaMarket(state) {
   // 顶栏按钮：回村（左）+ 换钻/礼包（右，IAP 占位）
   const buttons = getMarketButtons(w, h);
   for (const b of buttons) {
-    if (b.id === 'back') drawButton(cmds, b, '#3a3a66', '#ffffff');
-    else if (b.id === 'exchange') drawButton(cmds, b, '#7a5cff', '#ffffff');
-    else drawButton(cmds, b, '#ff8c5a', '#1a1a2e'); // single / ten
+    if (b.id === 'back') drawButton(cmds, b, THEME.PANEL, THEME.INK);
+    else if (b.id === 'exchange') drawButton(cmds, b, THEME.BERRY, '#ffffff');
+    else drawButton(cmds, b, THEME.CTA, '#1a1a2e'); // single / ten
   }
 
   // HUD
   const ledger = s.ledger || {};
   const star = ledger.star || 0;
   const diamond = ledger.diamond || 0;
-  cmds.push({ op: 'text', x: 14, y: 54, text: '★ ' + fmt(star) + '   💎 ' + fmt(diamond), color: '#ffffff', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'hud' });
+  cmds.push({ op: 'text', x: 14, y: 54, text: '★ ' + fmt(star) + '   💎 ' + fmt(diamond), color: THEME.INK, font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'hud' });
 
   // 标题
-  cmds.push({ op: 'text', x: w / 2, y: 78, text: '动才市场', color: '#ffd166', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'market-title' });
+  cmds.push({ op: 'text', x: w / 2, y: 78, text: '动才市场', color: '#E0A23A', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'market-title' });
 
   // 保底显示（读 gacha.getPity()，保底在引擎内；此处仅展示）
   const pity = s.pity != null ? s.pity : 0;
   const pityMax = s.pityMax || LOCKED.PITY_HARD;
   const left = Math.max(0, pityMax - pity);
-  cmds.push({ op: 'text', x: 14, y: 108, text: '距保底 ' + pity + '/' + pityMax, color: '#ffffff', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'market-pity' });
-  cmds.push({ op: 'text', x: 14, y: 130, text: left > 0 ? ('再招 ' + left + ' 次必得 SR') : '保底就绪！', color: '#c77dff', font: '13px sans-serif', align: 'left', baseline: 'middle', tag: 'market-pity-hint' });
+  cmds.push({ op: 'text', x: 14, y: 108, text: '距保底 ' + pity + '/' + pityMax, color: THEME.INK, font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'market-pity' });
+  cmds.push({ op: 'text', x: 14, y: 130, text: left > 0 ? ('再招 ' + left + ' 次必得 SR') : '保底就绪！', color: '#7E5AA8', font: '13px sans-serif', align: 'left', baseline: 'middle', tag: 'market-pity-hint' });
   const resultStartY = 156;
   if (s.newbie) {
-    cmds.push({ op: 'text', x: 14, y: 150, text: '新手前 10 抽 ≥1 SR', color: '#9bde7e', font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'market-newbie' });
+    cmds.push({ op: 'text', x: 14, y: 150, text: '新手前 10 抽 ≥1 SR', color: '#4A8A5A', font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'market-newbie' });
   }
 
   // 抽卡结果演出
@@ -395,13 +415,13 @@ function buildGachaMarket(state) {
   const gachaBtns = getGachaButtons(w, h);
   const panelY = gachaBtns[0].y - 96;
   if (panelY > resultStartY + 56) {
-    cmds.push({ op: 'roundrect', x: 14, y: panelY, w: w - 28, h: 84, r: 12, fill: '#2a2a4a', stroke: '#4a4a7a', lineWidth: 1, tag: 'market-iap-panel' });
-    cmds.push({ op: 'text', x: 24, y: panelY + 18, text: '换钻 / 礼包（占位）', color: '#ffffff', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'market-iap-title' });
-    cmds.push({ op: 'text', x: 24, y: panelY + 42, text: '钻石充值需微信商户平台配置，本期占位', color: '#b8b8e0', font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'market-iap-note' });
+    cmds.push({ op: 'roundrect', x: 14, y: panelY, w: w - 28, h: 84, r: 12, fill: THEME.PANEL, stroke: THEME.PANEL_STROKE, lineWidth: 1, tag: 'market-iap-panel' });
+    cmds.push({ op: 'text', x: 24, y: panelY + 18, text: '换钻 / 礼包（占位）', color: THEME.INK, font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'market-iap-title' });
+    cmds.push({ op: 'text', x: 24, y: panelY + 42, text: '钻石充值需微信商户平台配置，本期占位', color: '#9a8a78', font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'market-iap-note' });
   }
 
   // 抽卡按钮（单抽 / 十连）
-  for (const b of gachaBtns) drawButton(cmds, b, '#ff8c5a', '#1a1a2e');
+  for (const b of gachaBtns) drawButton(cmds, b, THEME.CTA, '#1a1a2e');
 
   return cmds;
 }
@@ -447,10 +467,10 @@ function buildWarehouse(state) {
   const w = (s.canvas && s.canvas.w) || 375;
   const h = (s.canvas && s.canvas.h) || 667;
   const cmds = [];
-  cmds.push({ op: 'clear', color: '#0f1a18', w, h, tag: 'bg' });
+  cmds.push({ op: 'clear', color: '#EAF3EE', w, h, tag: 'bg' });
 
   // 回村（仓库可点 → scene='HUB'；复用既有热区）
-  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+  drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
 
   const wh = s.warehouse || {};
   const ledger = wh.ledger || s.ledger || {};
@@ -458,12 +478,12 @@ function buildWarehouse(state) {
   const diamond = ledger.diamond || 0;
   const food = ledger.food || 0;
   const shard = ledger.shard || 0;
-  cmds.push({ op: 'text', x: 14, y: 30, text: '★ ' + fmt(star) + '   💎 ' + fmt(diamond) + '   🍖 ' + fmt(food) + '   🔷 ' + fmt(shard), color: '#ffffff', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'hud' });
-  cmds.push({ op: 'text', x: w / 2, y: 54, text: '囤囤仓', color: '#B8E0CB', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-title' });
+  cmds.push({ op: 'text', x: 14, y: 30, text: '★ ' + fmt(star) + '   💎 ' + fmt(diamond) + '   🍖 ' + fmt(food) + '   🔷 ' + fmt(shard), color: THEME.INK, font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'hud' });
+  cmds.push({ op: 'text', x: w / 2, y: 54, text: '囤囤仓', color: '#3A7A5E', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-title' });
 
   const dishes = wh.dishes || [];
   const unlocked = dishes.filter((d) => d.unlocked);
-  cmds.push({ op: 'text', x: 14, y: 84, text: '已解锁 ' + unlocked.length + ' 道菜', color: '#CFE3EC', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-dish-count' });
+  cmds.push({ op: 'text', x: 14, y: 84, text: '已解锁 ' + unlocked.length + ' 道菜', color: '#4A7A8A', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-dish-count' });
   unlocked.forEach((d, i) => {
     cmds.push({ op: 'roundrect', x: 14 + i * 64, y: 100, w: 56, h: 30, r: 8, fill: '#2e4a40', stroke: '#B8E0CB', lineWidth: 1, tag: 'warehouse-dish-chip' });
     cmds.push({ op: 'text', x: 14 + i * 64 + 28, y: 115, text: d.id, color: '#ffffff', font: '11px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-dish-label' });
@@ -524,7 +544,7 @@ function buildLounge(state) {
   const frame = s.frame || 0;
   const cmds = [];
   cmds.push({ op: 'clear', color: '#1a1410', w, h, tag: 'bg' });
-  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+  drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
   const rb = getLoungeButtons(w, h);
   drawButton(cmds, rb.roster, '#7a5cff', '#ffffff');
   cmds.push({ op: 'text', x: w / 2, y: 54, text: '撸毛馆', color: '#F3E2C7', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-title' });
@@ -556,7 +576,7 @@ function buildRoster(state) {
   const frame = s.frame || 0;
   const cmds = [];
   cmds.push({ op: 'clear', color: '#14141f', w, h, tag: 'bg' });
-  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+  drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
   cmds.push({ op: 'text', x: w / 2, y: 54, text: '图鉴', color: '#ffffff', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'roster-title' });
 
   const view = (s.roster && s.roster.view) || [];
@@ -693,7 +713,7 @@ function buildRestaurant(state) {
   cmds.push({ op: 'clear', color: BG, w, h, tag: 'bg' });
 
   // 回村按钮（餐厅可点 → scene='HUB'；保留既有热区）
-  drawButton(cmds, getTopBackButton(w, h), '#3a3a66', '#ffffff');
+  drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
 
   // HUD：星券 / 食材 / pity（保留既有 tag 'hud'，既有单测不破）
   const ledger = s.ledger || {};
