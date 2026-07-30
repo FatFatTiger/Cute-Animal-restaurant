@@ -39,6 +39,20 @@ const THEME = {
   CTA: '#FF9E68',           // 暖橘 CTA（§3.1）
   GOLD: '#F4C95D',          // 星金强调（§7.2 SSR）
   BERRY: '#E8587E',         // 莓果红（§10.3 市集彩）
+  // —— B3 三区场景专用色板（§4.1–4.3；纯渲染层，非锁参 / 非经济逻辑）——
+  WOOD: '#D9A878',          // 暖木框（迎宾/后厨货架/中枢屋顶/卡框描边）
+  GRASS: '#A9D8A0',         // 草坡绿（就餐坐垫 / 中枢地面）
+  PATH: '#E8D2B0',          // 小径（中枢地面长圆角）
+  SKY_TOP: '#CDEAF2',       // 天空渐变上（中枢，堆叠 rect 伪造）
+  SKY_BOT: '#FBE3D2',       // 天空渐变下（中枢）
+  SOFA: '#F3E2C7',          // 奶茶暖沙发垫（撸毛馆）
+  COOL_MINT: '#B8E0CB',     // 仓库冷调·薄荷绿
+  COOL_BLUE: '#9BCFD8',     // 仓库冷调·雾霾蓝
+  LOUNGE_BG: '#3a2c22',     // 撸毛馆奶茶暖底（保留浅色 critter / 金色好感度文字对比）
+  LAMP: '#FFE9B0',          // 暖吊灯光晕（就餐区伪造光晕）
+  ROOF: '#C58A5E',          // 中枢小屋屋顶暖陶
+  ROOF_DK: '#A9744C',       // 中枢小屋屋顶暗面
+  ROSTER_CARD: '#2A2438',   // 图鉴卡面（暖深底，衬托浅色身份色 critter）
 };
 
 // 稀有度色板（art-bible §7.2 锁定 hex：N:#A8C0B0 / R:#8FB8E0 / SR:#C9A6E8 / SSR:#F4C95D）
@@ -250,6 +264,18 @@ function appendHubRegion(cmds, reg, state) {
     fill: reg.locked ? '#EFE6DC' : THEME.PANEL,
     stroke, lineWidth: active ? 3 : 2, tag: 'hub-region', id: reg.id, locked: reg.locked,
   });
+  // 小屋屋顶（两块渐缩 roundRect，暖陶色）+ 暖木描边（纯装饰，区域几何/命中不变）
+  const rvx = reg.x + reg.w * 0.14;
+  const rvw = reg.w * 0.72;
+  cmds.push({ op: 'roundrect', x: rvx, y: reg.y + 10, w: rvw, h: 22, r: 8, fill: THEME.ROOF, stroke: THEME.WOOD, lineWidth: 2, tag: 'hub-roof', id: reg.id });
+  cmds.push({ op: 'roundrect', x: rvx + rvw * 0.18, y: reg.y + 2, w: rvw * 0.64, h: 16, r: 6, fill: THEME.ROOF_DK, stroke: THEME.WOOD, lineWidth: 2, tag: 'hub-roof', id: reg.id });
+  // 招牌图标（🏠/🎴/📦/🐱 按区域）
+  const SIGN_ICON = { [SCENE.RESTAURANT]: '🏠', [SCENE.GACHA_MARKET]: '🎴', [SCENE.WAREHOUSE]: '📦', [SCENE.STAFF_LOUNGE]: '🐱' };
+  cmds.push({ op: 'roundrect', x: reg.x + reg.w / 2 - 16, y: reg.y + 38, w: 32, h: 22, r: 6, fill: THEME.PANEL, stroke: THEME.WOOD, lineWidth: 1, tag: 'hub-sign', id: reg.id });
+  cmds.push({ op: 'text', x: reg.x + reg.w / 2, y: reg.y + 49, text: SIGN_ICON[reg.id] || '🏠', color: '#5A4A42', font: '14px sans-serif', align: 'center', baseline: 'middle', tag: 'hub-sign-icon', id: reg.id });
+  // 小屋暖光窗（两扇圆角暖色窗，纯装饰；区域几何/命中不变，hub-region/hub-locked 等 tag 不受影响）
+  cmds.push({ op: 'roundrect', x: reg.x + reg.w * 0.16, y: reg.y + 64, w: reg.w * 0.26, h: 22, r: 6, fill: '#FFE9B0', stroke: THEME.WOOD, lineWidth: 1, tag: 'hub-window', id: reg.id });
+  cmds.push({ op: 'roundrect', x: reg.x + reg.w * 0.58, y: reg.y + 64, w: reg.w * 0.26, h: 22, r: 6, fill: '#FFE9B0', stroke: THEME.WOOD, lineWidth: 1, tag: 'hub-window', id: reg.id });
   // 迎宾小动物（门口装饰，复用角色绘制库；idle 相位按区域错开）
   const critterX = reg.x + reg.w / 2;
   const critterY = reg.y + reg.h * 0.42;
@@ -290,9 +316,37 @@ function buildHub(state) {
 
   cmds.push({ op: 'clear', color: BG, w, h, tag: 'bg' });
 
-  // 扁平温暖天光（零位图，不变量 #1）：暖色天空块 + 远山椭圆
-  cmds.push({ op: 'rect', x: 0, y: 0, w, h: Math.round(h * 0.4), fill: '#fbe3c8', stroke: null, lineWidth: 0, tag: 'hub-sky' });
-  cmds.push({ op: 'ellipse', x: w * 0.5, y: Math.round(h * 0.4), rx: w, ry: 40, fill: '#ffe9d2', tag: 'hub-hill' });
+  // —— 中枢 cozy overworld（§4.2）：天空渐变 + 云 + 地面 tile + 小径 + 远山 ——
+  // 天空：2~3 层堆叠 rect 伪造垂直渐变（#CDEAF2→#FBE3D2）
+  const skyH = Math.round(h * 0.42);
+  const skyBands = [
+    { y: 0, hh: Math.round(skyH * 0.42), fill: THEME.SKY_TOP },
+    { y: Math.round(skyH * 0.42), hh: Math.round(skyH * 0.33), fill: '#E4E7EF' },
+    { y: Math.round(skyH * 0.75), hh: skyH - Math.round(skyH * 0.75), fill: THEME.SKY_BOT },
+  ];
+  for (const b of skyBands) cmds.push({ op: 'rect', x: 0, y: b.y, w, h: b.hh, fill: b.fill, stroke: null, lineWidth: 0, tag: 'hub-sky' });
+  // 云（circle cluster）
+  const cloudAt = (cx, cy) => {
+    cmds.push({ op: 'circle', x: cx, y: cy, r: 12, fill: '#ffffff', tag: 'hub-cloud' });
+    cmds.push({ op: 'circle', x: cx + 14, y: cy + 3, r: 10, fill: '#ffffff', tag: 'hub-cloud' });
+    cmds.push({ op: 'circle', x: cx - 13, y: cy + 4, r: 9, fill: '#f4fbff', tag: 'hub-cloud' });
+  };
+  cloudAt(70, 36); cloudAt(212, 30); cloudAt(322, 44);
+  // 地面：草坡绿 rounded tile 网格 + 小径（先画，区域面板覆盖其上）
+  const groundTop = skyH;
+  cmds.push({ op: 'rect', x: 0, y: groundTop, w, h: h - groundTop, fill: THEME.GRASS, stroke: null, lineWidth: 0, tag: 'hub-ground' });
+  const tile = 30, tgap = 6;
+  for (let ty = h - 150; ty < h - 50; ty += tile + tgap) {
+    for (let tx = 8; tx < w - tile; tx += tile + tgap) {
+      cmds.push({ op: 'roundrect', x: tx, y: ty, w: tile, h: tile, r: 8, fill: 'rgba(255,255,255,0.10)', stroke: 'rgba(255,255,255,0.18)', lineWidth: 1, tag: 'hub-tile' });
+    }
+  }
+  // 小径（长圆角 PATH 色，横贯底部可见带）
+  cmds.push({ op: 'roundrect', x: 30, y: h - 86, w: w - 60, h: 20, r: 10, fill: THEME.PATH, stroke: null, lineWidth: 0, tag: 'hub-path' });
+  // 远山（ellipse cluster，底部可见带；区域面板覆盖其上方）
+  const hillBase = h - 120;
+  [{ x: 70, y: hillBase, rx: 70, ry: 34 }, { x: 200, y: hillBase + 6, rx: 90, ry: 40 }, { x: 320, y: hillBase, rx: 66, ry: 32 }].forEach((hl) =>
+    cmds.push({ op: 'ellipse', x: hl.x, y: hl.y, rx: hl.rx, ry: hl.ry, fill: '#9CC8A0', tag: 'hub-hill' }));
 
   // 顶部只读 HUD：四货币（★星券 💎钻石 🍖食材 🔷碎片）
   const ledger = s.ledger || {};
@@ -469,12 +523,38 @@ function buildWarehouse(state) {
     cmds.push({ op: 'text', x: 14 + i * 64 + 28, y: 115, text: d.id, color: '#ffffff', font: '11px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-dish-label' });
   });
 
+  // 冷调背板（薄荷绿，衬托冷色货架，纯装饰，非热区）
+  cmds.push({ op: 'roundrect', x: w - 100, y: 104, w: 92, h: 262, r: 12, fill: THEME.COOL_MINT, stroke: THEME.COOL_BLUE, lineWidth: 1, tag: 'warehouse-shelf-back' });
+  // 冷调货架（暖木框 roundRect 网格）+ 资源罐（圆角罐 + ⭐/🍖/💎/🔷 图标）
+  const sx0 = w - 94, sw = 80, sy0 = 110, shh = 250;
+  cmds.push({ op: 'roundrect', x: sx0, y: sy0, w: 8, h: shh, r: 4, fill: THEME.WOOD, stroke: null, lineWidth: 0, tag: 'warehouse-shelf-frame' });
+  cmds.push({ op: 'roundrect', x: sx0 + sw - 8, y: sy0, w: 8, h: shh, r: 4, fill: THEME.WOOD, stroke: null, lineWidth: 0, tag: 'warehouse-shelf-frame' });
+  for (let k = 0; k < 3; k++) {
+    const syk = sy0 + 12 + k * ((shh - 24) / 2);
+    cmds.push({ op: 'roundrect', x: sx0, y: syk, w: sw, h: 10, r: 5, fill: THEME.WOOD, stroke: THEME.ROOF_DK, lineWidth: 1, tag: 'warehouse-shelf', index: k });
+  }
+  ['⭐', '🍖', '💎', '🔷'].forEach((ic, k) => {
+    const col = k % 2, row = Math.floor(k / 2);
+    const jx = sx0 + 14 + col * 40, jy = sy0 + 6 + row * ((shh - 24) / 2) - 2;
+    cmds.push({ op: 'roundrect', x: jx, y: jy, w: 26, h: 24, r: 7, fill: THEME.COOL_BLUE, stroke: THEME.WOOD, lineWidth: 1, tag: 'warehouse-jar', index: k });
+    cmds.push({ op: 'text', x: jx + 13, y: jy + 13, text: ic, color: '#1f3a44', font: '13px sans-serif', align: 'center', baseline: 'middle', tag: 'warehouse-jar-icon', index: k });
+  });
+
   const next = wh.nextDish;
   if (next) {
     cmds.push({ op: 'text', x: 14, y: 162, text: '下一道可解锁 ' + next.id + '：★' + next.costStar + ' 🍖' + next.costFood, color: '#FF9E68', font: '14px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-next-cost' });
     const btns = getWarehouseButtons(w, h, s);
     if (btns.length) drawButton(cmds, btns[0], '#FF9E68', '#1a1a2e');
     else cmds.push({ op: 'text', x: 14, y: 206, text: '星券 / 食材不足，先去餐厅经营攒资源', color: '#bbbbbb', font: '12px sans-serif', align: 'left', baseline: 'middle', tag: 'warehouse-insufficient' });
+  }
+  // 进度条（暖橘 rounded bar，反映距解锁下一道菜的资源进度，纯视觉）
+  if (next) {
+    const need = (next.costStar || 0) + (next.costFood || 0) || 1;
+    const have = Math.max(0, Math.min(need, star + food));
+    const frac = have / need;
+    const pbX = 14, pbY = 470, pbW = w - 28, pbH = 16;
+    cmds.push({ op: 'roundrect', x: pbX, y: pbY, w: pbW, h: pbH, r: 8, fill: THEME.COOL_MINT, stroke: THEME.WOOD, lineWidth: 1, tag: 'warehouse-progress' });
+    cmds.push({ op: 'roundrect', x: pbX, y: pbY, w: Math.max(8, Math.round(pbW * frac)), h: pbH, r: 8, fill: THEME.CTA, stroke: null, lineWidth: 0, tag: 'warehouse-progress-fill' });
   }
   return cmds;
 }
@@ -523,11 +603,20 @@ function buildLounge(state) {
   const h = (s.canvas && s.canvas.h) || 667;
   const frame = s.frame || 0;
   const cmds = [];
-  cmds.push({ op: 'clear', color: '#1a1410', w, h, tag: 'bg' });
+  cmds.push({ op: 'clear', color: THEME.LOUNGE_BG, w, h, tag: 'bg' });
   drawButton(cmds, getTopBackButton(w, h), THEME.PANEL, THEME.INK);
   const rb = getLoungeButtons(w, h);
   drawButton(cmds, rb.roster, '#7a5cff', '#ffffff');
   cmds.push({ op: 'text', x: w / 2, y: 54, text: '撸毛馆', color: '#F3E2C7', font: '20px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-title' });
+
+  // 奶茶暖调陈设（纯装饰，非 critter 热区）：窗（伪造天光）+ 猫爬架
+  cmds.push({ op: 'roundrect', x: w - 92, y: 70, w: 76, h: 54, r: 10, fill: '#BFE0E8', stroke: THEME.WOOD, lineWidth: 3, tag: 'lounge-window' });
+  cmds.push({ op: 'ellipse', x: w - 54, y: 92, rx: 30, ry: 18, fill: 'rgba(255,255,255,0.35)', tag: 'lounge-window-glow' });
+  cmds.push({ op: 'roundrect', x: w - 92, y: 70, w: 76, h: 54, r: 10, fill: null, stroke: THEME.WOOD, lineWidth: 1, tag: 'lounge-window' });
+  cmds.push({ op: 'roundrect', x: 16, y: 96, w: 14, h: 150, r: 6, fill: THEME.WOOD, stroke: null, lineWidth: 0, tag: 'lounge-cattree' });
+  cmds.push({ op: 'ellipse', x: 23, y: 104, rx: 26, ry: 10, fill: THEME.SOFA, stroke: THEME.ROOF_DK, lineWidth: 1, tag: 'lounge-cattree' });
+  // 奶茶暖地垫（ellipse 软垫，纯装饰，非 critter 热区）
+  cmds.push({ op: 'ellipse', x: 23, y: 252, rx: 30, ry: 9, fill: 'rgba(243,226,199,0.30)', stroke: null, lineWidth: 0, tag: 'lounge-rug' });
 
   const owned = (s.lounge && s.lounge.owned) || [];
   if (!owned.length) {
@@ -538,8 +627,10 @@ function buildLounge(state) {
   owned.forEach((o, i) => {
     const cx = gx + (i % cols) * cw + cw / 2;
     const cy = gy + Math.floor(i / cols) * ch;
-    // 分层 fill 修正（R3）：角色本体用 12 身份配色（resolveCritterSpec → COLOR_PRESETS），
-    // 绝不把 RARITY_COLORS 涂到角色本体；稀有度色仅出现在 UI 卡框层（见 roster-rarity-bar）。
+    // 沙发坐垫（奶茶暖 ellipse #F3E2C7）+ 靠背（圆角）
+    cmds.push({ op: 'roundrect', x: cx - 26, y: cy + 18, w: 52, h: 26, r: 12, fill: THEME.SOFA, stroke: THEME.ROOF_DK, lineWidth: 1, tag: 'lounge-sofa' });
+    cmds.push({ op: 'ellipse', x: cx, y: cy + 26, rx: 22, ry: 9, fill: THEME.SOFA, tag: 'lounge-cushion' });
+    // 角色本体用 12 身份配色（resolveCritterSpec → COLOR_PRESETS），绝不稀有度色
     const spec = PA.resolveCritterSpec(o.id);
     appendCritter(cmds, { x: cx, y: cy, r: 20, frame, phase: i, id: 'lounge-' + o.id, spec });
     cmds.push({ op: 'text', x: cx, y: cy + 32, text: o.id, color: '#ffffff', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'lounge-critter-label' });
@@ -571,6 +662,9 @@ function buildRoster(state) {
   view.forEach((e, i) => {
     const cx = gx + (i % cols) * cw + cw / 2;
     const cy = gy + Math.floor(i / cols) * ch;
+    // 卡框（圆角 r 30，双层描边）—— 纯装饰，不持有状态；roster-rarity-bar / 角色层在其内
+    cmds.push({ op: 'roundrect', x: cx - 30, y: cy - 34, w: 60, h: 72, r: 30, fill: THEME.ROSTER_CARD, stroke: THEME.WOOD, lineWidth: 3, tag: 'roster-card', id: e.id });
+    cmds.push({ op: 'roundrect', x: cx - 26, y: cy - 30, w: 52, h: 64, r: 26, fill: 'rgba(255,255,255,0.04)', stroke: 'rgba(255,255,255,0.22)', lineWidth: 1, tag: 'roster-card', id: e.id });
     if (e.owned) {
       // 分层 fill 修正（R3）：角色本体用 12 身份配色（绝不稀有度色）；稀有度色仅留 UI 卡框条（下条）。
       const spec = PA.resolveCritterSpec(e.id);
@@ -606,8 +700,8 @@ function buildRoster(state) {
  * 三岗员工：圆润 critter + 身份色(ROLE_COLORS) + 岗位小标（如「厨」/「服」/「迎」）
  *         + 角色标签 + 等级。保留既有 tag 'staff-label' 以保证既有单测不破。
  */
-function drawZoneStaff(cmds, st, x, y, frame, i, tag) {
-  appendCritter(cmds, { x, y, r: 14, fill: ROLE_COLORS[st.role] || '#888888', frame, phase: i * 2, id: 'staff-' + (st.id || i) });
+function drawZoneStaff(cmds, st, x, y, frame, i, tag, accessory) {
+  appendCritter(cmds, { x, y, r: 14, fill: ROLE_COLORS[st.role] || '#888888', frame, phase: i * 2, id: 'staff-' + (st.id || i), accessory });
   cmds.push({
     op: 'text',
     x,
@@ -627,9 +721,12 @@ function drawZoneStaff(cmds, st, x, y, frame, i, tag) {
  * 复用既有 demand / demand-text tag + locked 标记，既有单测不破。
  * @param {boolean} seated 仅用于注释语义；落座与排队使用同一气泡样式，仅坐标不同（调用侧决定）。
  */
-function drawCustomerBubble(cmds, c, x, y, frame, i) {
+function drawCustomerBubble(cmds, c, x, y, frame, i, spec) {
   const serviceable = !!c.serviceable;
-  appendCritter(cmds, { x, y, r: 18, fill: serviceable ? '#5bc0eb' : '#6b6b8f', frame, phase: i * 3 + 1, id: 'cust-' + (c.id || i) });
+  const opts = { x, y, r: 18, frame, phase: i * 3 + 1, id: 'cust-' + (c.id || i) };
+  if (spec) opts.spec = spec;                       // 就餐落座顾客用真实 spec（身份色，见 §4.1）
+  else opts.fill = serviceable ? '#5bc0eb' : '#6b6b8f'; // 迎宾排队沿用岗位固定色
+  appendCritter(cmds, opts);
   const bx = x + 26;
   const by = y - 14;
   cmds.push({ op: 'roundrect', x: bx, y: by, w: 132, h: 28, r: 8, fill: serviceable ? '#ffffff' : '#777777', stroke: '#00000022', lineWidth: 1, tag: 'demand', locked: !serviceable, id: c.id });
@@ -723,27 +820,67 @@ function buildRestaurant(state) {
   const customers = s.customers || [];
   const seatStep = Math.floor((zw - 32) / Math.max(1, seats));
 
-  // 1) 迎宾区（host + 排队顾客）
-  cmds.push({ op: 'roundrect', x: zx, y: top, w: zw, h: zoneH, r: 14, fill: '#3a2f4a', stroke: '#D9A878', lineWidth: 2, tag: 'zone-welcome' });
+  // —— 1) 迎宾区（暖木框 + 迎宾牌 + host 接待 + 排队顾客）——
+  // 暖木框 + 暖棕室内填色（cozy 暖调，非占位紫）；保留 zone-welcome / zone-label-welcome tag
+  cmds.push({ op: 'roundrect', x: zx, y: top, w: zw, h: zoneH, r: 14, fill: '#4a3826', stroke: THEME.WOOD, lineWidth: 2, tag: 'zone-welcome' });
   cmds.push({ op: 'text', x: zx + 12, y: top + 18, text: '迎宾区', color: '#F3E2C7', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-welcome' });
-  staff.filter((st) => st.role === 'host').forEach((st, i) => drawZoneStaff(cmds, st, zx + 20 + i * 54, top + zoneH - 28, frame, i, '迎'));
-  customers.slice(seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 20 + i * 60, top + zoneH - 28, frame, i));
+  // 迎宾牌（暖木小招牌 + 🏠 图标 + 迎宾文字，纯装饰，无抽卡痕迹）
+  cmds.push({ op: 'roundrect', x: zx + zw - 56, y: top + 10, w: 46, h: 26, r: 8, fill: THEME.PANEL, stroke: THEME.WOOD, lineWidth: 2, tag: 'welcome-sign' });
+  cmds.push({ op: 'text', x: zx + zw - 33, y: top + 23, text: '🏠', color: '#5A4A42', font: '14px sans-serif', align: 'center', baseline: 'middle', tag: 'welcome-sign-icon' });
+  cmds.push({ op: 'text', x: zx + zw - 33, y: top + 42, text: '迎宾', color: '#7A6A5A', font: '10px sans-serif', align: 'center', baseline: 'middle', tag: 'welcome-sign-text' });
+  // 门口暖木迎宾地垫（圆角 PATH 色，纯装饰，非热区）
+  cmds.push({ op: 'roundrect', x: zx + 14, y: top + zoneH - 12, w: 64, h: 8, r: 4, fill: THEME.PATH, stroke: null, lineWidth: 0, tag: 'welcome-mat' });
+  // host（familyToJob→接待）立于门口，带迎宾牌配件（accessory 装饰，非稀有度色）
+  staff.filter((st) => st.role === 'host').forEach((st, i) => drawZoneStaff(cmds, st, zx + 24 + i * 54, top + zoneH - 30, frame, i, '迎', 0));
+  // 排队顾客需求气泡（保留 drawCustomerBubble / demand / demand-text tag）
+  customers.slice(seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 24 + i * 60, top + zoneH - 30, frame, i));
 
-  // 2) 就餐区（座位 + 已落座顾客 + waiter）
-  cmds.push({ op: 'roundrect', x: zx, y: top + zoneH, w: zw, h: zoneH, r: 14, fill: '#233a2e', stroke: '#A9D8A0', lineWidth: 2, tag: 'zone-dining' });
+  // —— 2) 就餐区（餐桌 + 坐垫 + 落座顾客真实 spec + waiter + 暖吊灯伪造光晕）——
+  cmds.push({ op: 'roundrect', x: zx, y: top + zoneH, w: zw, h: zoneH, r: 14, fill: '#2e4636', stroke: THEME.GRASS, lineWidth: 2, tag: 'zone-dining' });
   cmds.push({ op: 'text', x: zx + 12, y: top + zoneH + 18, text: '就餐区', color: '#A9D8A0', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-dining' });
+  // 暖吊灯（circle + 3 层半透明 ellipse 伪造光晕；无 gradient op，堆叠 ellipse 代替）
+  const lampX = zx + zw / 2;
+  const lampY = top + zoneH + 16;
+  cmds.push({ op: 'circle', x: lampX, y: lampY, r: 4, fill: THEME.LAMP, tag: 'lamp' });
+  cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: 40, ry: 30, fill: 'rgba(255,233,176,0.07)', tag: 'lamp-glow' });
+  cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: 28, ry: 21, fill: 'rgba(255,233,176,0.12)', tag: 'lamp-glow' });
+  cmds.push({ op: 'ellipse', x: lampX, y: lampY, rx: 16, ry: 12, fill: 'rgba(255,233,176,0.22)', tag: 'lamp-glow' });
   for (let i = 0; i < seats; i++) {
+    const sx = zx + 16 + i * seatStep + 14;
+    const sy = top + zoneH + 34 + 14;
+    // 座位标记（保留 seat tag）
     cmds.push({ op: 'roundrect', x: zx + 16 + i * seatStep, y: top + zoneH + 34, w: 28, h: 28, r: 8, fill: '#2e2e55', stroke: '#4a4a7a', lineWidth: 1, tag: 'seat', index: i });
+    // 餐桌桌面（暖木 roundRect）
+    cmds.push({ op: 'roundrect', x: sx - 22, y: sy + 12, w: 44, h: 14, r: 6, fill: THEME.WOOD, stroke: THEME.ROOF_DK, lineWidth: 1, tag: 'seat-table', index: i });
+    // 坐垫（草坡绿 ellipse #A9D8A0）
+    cmds.push({ op: 'ellipse', x: sx, y: sy + 8, rx: 20, ry: 8, fill: THEME.GRASS, tag: 'seat-cushion', index: i });
   }
-  customers.slice(0, seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 16 + i * seatStep + 14, top + zoneH + 34 + 14, frame, i));
-  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + zoneH + zoneH - 28, frame, i, '服'));
+  // 落座顾客（真实 spec → 12 身份配色，绝不用稀有度色）
+  customers.slice(0, seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 16 + i * seatStep + 14, top + zoneH + 34 + 14, frame, i, PA.resolveCritterSpec(c.id)));
+  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + 2 * zoneH - 28, frame, i, '服'));
 
-  // 3) 后厨区（chef + 烹饪图元：锅 roundrect + 火苗 ellipse，零位图）
-  cmds.push({ op: 'roundrect', x: zx, y: top + 2 * zoneH, w: zw, h: zoneH, r: 14, fill: '#3a2e22', stroke: '#D9A878', lineWidth: 2, tag: 'zone-kitchen' });
+  // —— 3) 后厨区（chef + 锅/火苗 + 货架网格）——
+  cmds.push({ op: 'roundrect', x: zx, y: top + 2 * zoneH, w: zw, h: zoneH, r: 14, fill: '#46352a', stroke: THEME.WOOD, lineWidth: 2, tag: 'zone-kitchen' });
   cmds.push({ op: 'text', x: zx + 12, y: top + 2 * zoneH + 18, text: '后厨区', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-kitchen' });
-  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 2 * zoneH + zoneH - 28, frame, i, '厨'));
+  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 3 * zoneH - 30, frame, i, '厨'));
+  // 锅（保留 pot tag roundrect）
   cmds.push({ op: 'roundrect', x: zx + 20, y: top + 3 * zoneH - 44, w: 44, h: 24, r: 6, fill: '#4a4a4a', stroke: '#222222', lineWidth: 1, tag: 'pot' });
+  // 火苗（保留 flame tag ellipse）
   cmds.push({ op: 'ellipse', x: zx + 42, y: top + 3 * zoneH - 48, rx: 12, ry: 16, fill: '#ff9f43', stroke: '#ffd166', lineWidth: 1, tag: 'flame' });
+  // 货架（暖木框 roundRect 网格 + 两罐食材）
+  const shX = zx + zw - 116, shY = top + 2 * zoneH + 26, shW = 100, shH = zoneH - 60;
+  cmds.push({ op: 'roundrect', x: shX, y: shY, w: 8, h: shH, r: 4, fill: THEME.WOOD, stroke: null, lineWidth: 0, tag: 'kitchen-shelf-frame' });
+  cmds.push({ op: 'roundrect', x: shX + shW - 8, y: shY, w: 8, h: shH, r: 4, fill: THEME.WOOD, stroke: null, lineWidth: 0, tag: 'kitchen-shelf-frame' });
+  for (let k = 0; k < 3; k++) {
+    const sy2 = shY + 6 + k * ((shH - 12) / 2);
+    cmds.push({ op: 'roundrect', x: shX, y: sy2, w: shW, h: 10, r: 5, fill: THEME.WOOD, stroke: THEME.ROOF_DK, lineWidth: 1, tag: 'kitchen-shelf', index: k });
+  }
+  // 货架上两罐食材（圆角罐 + 图标文字）
+  ['🍖', '🥕'].forEach((ic, k) => {
+    const jx = shX + 16 + k * 44, jy = shY - 2;
+    cmds.push({ op: 'roundrect', x: jx, y: jy, w: 24, h: 22, r: 6, fill: THEME.PANEL, stroke: THEME.WOOD, lineWidth: 1, tag: 'kitchen-jar', index: k });
+    cmds.push({ op: 'text', x: jx + 12, y: jy + 12, text: ic, color: '#5A4A42', font: '12px sans-serif', align: 'center', baseline: 'middle', tag: 'kitchen-jar-icon', index: k });
+  });
 
   // 决策② 双入口：餐厅也可解锁下一道菜（与仓库共用 restaurant.unlockDish，原子扣 star+food）
   const restUb = getRestaurantUnlockButton(w, h, s);
