@@ -300,6 +300,7 @@ function appendHubRegion(cmds, reg, state) {
     fill: reg.locked ? '#B7AEA0' : fillByRole,
     frame: state.frame || 0, phase: (reg.id.charCodeAt(0) || 0) % 7,
     id: 'hub-' + reg.id,
+    reduceMotion: !!(state && state.reduceMotion),
   });
   // 区域标签
   cmds.push({
@@ -886,13 +887,13 @@ function buildRestaurant(state) {
   }
   // 落座顾客（真实 spec → 12 身份配色，绝不用稀有度色）
   customers.slice(0, seats).forEach((c, i) => drawCustomerBubble(cmds, c, zx + 16 + i * seatStep + 14, top + zoneH + 34 + 14, frame, i, PA.resolveCritterSpec(c.id), reduce));
-  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + 2 * zoneH - 28, frame, i, '服', reduce));
+  staff.filter((st) => st.role === 'waiter').forEach((st, i) => drawZoneStaff(cmds, st, zx + zw - 40 - i * 54, top + 2 * zoneH - 28, frame, i, '服', undefined, reduce));
 
   // —— 3) 后厨区（chef + 锅/火苗 + 货架网格）——
   cmds.push({ op: 'roundrect', x: zx, y: top + 2 * zoneH, w: zw, h: zoneH, r: 14, fill: '#46352a', stroke: THEME.WOOD, lineWidth: 2, tag: 'zone-kitchen' });
   cmds.push({ op: 'text', x: zx + 12, y: top + 2 * zoneH + 18, text: '🍳', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-icon-kitchen' });
   cmds.push({ op: 'text', x: zx + 34, y: top + 2 * zoneH + 18, text: '后厨区', color: '#E8C89A', font: '15px sans-serif', align: 'left', baseline: 'middle', tag: 'zone-label-kitchen' });
-  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 3 * zoneH - 30, frame, i, '厨', reduce));
+  staff.filter((st) => st.role === 'chef').forEach((st, i) => drawZoneStaff(cmds, st, zx + 70 + i * 54, top + 3 * zoneH - 30, frame, i, '厨', undefined, reduce));
   // 锅（保留 pot tag roundrect）
   cmds.push({ op: 'roundrect', x: zx + 20, y: top + 3 * zoneH - 44, w: 44, h: 24, r: 6, fill: '#4a4a4a', stroke: '#222222', lineWidth: 1, tag: 'pot' });
   // 火苗（保留 flame tag ellipse）
